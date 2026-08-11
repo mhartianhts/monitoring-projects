@@ -1,0 +1,7 @@
+{
+  "name": "API Example",
+  "type": "python",
+  "start": "venv\\Scripts\\python.exe app.py",
+  "port": 5000,
+  "cwd": "."
+}

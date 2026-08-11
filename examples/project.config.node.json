@@ -1,0 +1,7 @@
+{
+  "name": "Backend Aira",
+  "type": "node",
+  "start": "npm run dev",
+  "port": 3000,
+  "cwd": "."
+}

@@ -1,0 +1,21 @@
+{
+  "name": "lpm-backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --watch src/server.js",
+    "start": "node src/server.js",
+    "test": "node --test test/**/*.test.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "google-auth-library": "^11.0.0",
+    "pdfkit": "^0.19.1",
+    "pidusage": "^3.0.2",
+    "socket.io": "^4.8.1",
+    "tree-kill": "^1.2.2"
+  }
+}

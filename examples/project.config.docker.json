@@ -1,0 +1,8 @@
+{
+  "name": "WhatsApp Services",
+  "type": "docker",
+  "start": "docker compose up",
+  "stop": "docker compose down",
+  "port": 8080,
+  "cwd": "."
+}
