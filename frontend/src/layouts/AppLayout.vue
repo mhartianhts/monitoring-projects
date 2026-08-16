@@ -9,7 +9,18 @@ import NotificationShowcaseModal from "../components/ui/NotificationShowcaseModa
 
 const route = useRoute();
 const store = useProjectStore();
-const { error, bulkLoading, projects } = storeToRefs(store);
+const { error, bulkLoading, projects, selected, showProjectSidebar } = storeToRefs(store);
+
+const pageTitle = computed(() => {
+  if (route.name === 'dashboard') return 'Process Monitor';
+  if (route.name === 'git') return 'Git Workspace';
+  if (route.name === 'traces') return 'Distributed Tracing & APM';
+  if (route.name === 'graph') return 'Codebase Knowledge Graph';
+  if (route.name === 'api-docs') return 'OpenAPI 3.0 & API Workspace';
+  if (route.name === 'agent') return 'AI Agent Workspace';
+  if (route.name === 'ai') return 'AI Chat';
+  return 'Workspace';
+});
 
 const runningCount = computed(
   () => projects.value.filter((p) => p.status === "running").length,
@@ -26,103 +37,90 @@ onMounted(async () => {
 </script>
 
 <template>
-  <div class="flex h-full flex-col">
+  <div class="flex h-full flex-col bg-base">
+    <!-- Glassmorphism Top Header Bar -->
     <nav
-      class="flex items-center justify-between gap-4 border-b border-line bg-panel px-4 py-2"
+      class="flex items-center justify-between gap-4 border-b border-line/70 bg-panel/90 backdrop-blur-md px-4 py-2.5 z-40"
     >
-      <div class="flex items-center gap-6">
-        <div class="flex items-center gap-2">
-          <p class="text-xs uppercase tracking-[0.2em] text-muted">Local PM</p>
-          <span
-            class="rounded bg-accent/15 px-1.5 py-0.5 text-[10px] font-semibold text-accent"
-            >v1.4</span
-          >
-        </div>
-        <div class="flex items-center gap-1">
-          <RouterLink
-            :to="{ name: 'dashboard' }"
-            class="rounded-md px-3 py-1.5 text-sm transition"
-            :class="
-              route.name === 'dashboard'
-                ? 'bg-elevated text-ink'
-                : 'text-muted hover:bg-elevated/60 hover:text-ink'
-            "
-          >
-            Process
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'git' }"
-            class="rounded-md px-3 py-1.5 text-sm transition"
-            :class="
-              route.name === 'git'
-                ? 'bg-elevated text-ink'
-                : 'text-muted hover:bg-elevated/60 hover:text-ink'
-            "
-          >
-            Git
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'agent' }"
-            class="rounded-md px-3 py-1.5 text-sm transition font-medium flex items-center gap-1.5"
-            :class="
-              route.name === 'agent'
-                ? 'bg-accent/20 text-accent font-semibold'
-                : 'text-muted hover:bg-elevated/60 hover:text-ink'
-            "
-          >
-            <span>Agent</span>
-            <span class="rounded bg-accent/20 px-1 py-0.2 text-[9px] uppercase tracking-wider text-accent font-mono">New</span>
-          </RouterLink>
-          <RouterLink
-            :to="{ name: 'ai' }"
-            class="rounded-md px-3 py-1.5 text-sm transition"
-            :class="
-              route.name === 'ai'
-                ? 'bg-elevated text-ink'
-                : 'text-muted hover:bg-elevated/60 hover:text-ink'
-            "
-          >
-            AI Chat
-          </RouterLink>
+      <!-- Left: Sidebar Toggle & Breadcrumb Title -->
+      <div class="flex items-center gap-3 min-w-0">
+        <button
+          type="button"
+          class="flex h-8 items-center gap-1.5 rounded-md border border-line bg-elevated px-2.5 py-1 text-xs font-semibold text-ink transition hover:bg-line hover:text-accent shadow-xs shrink-0"
+          :title="showProjectSidebar ? 'Sembunyikan Sidebar Menu' : 'Tampilkan Sidebar Menu'"
+          @click="store.toggleProjectSidebar"
+        >
+          <span>☰</span>
+          <span class="hidden sm:inline font-mono text-[11px]">{{ showProjectSidebar ? 'Hide Menu' : 'Menu' }}</span>
+        </button>
+
+        <!-- Breadcrumbs Navigation -->
+        <div class="flex items-center gap-2 text-xs truncate">
+          <span class="font-bold text-ink uppercase tracking-wider font-mono text-[11px] hidden sm:inline">Local PM</span>
+          <span class="text-muted/40 hidden sm:inline">/</span>
+          <span v-if="selected" class="font-semibold text-accent truncate max-w-[150px] md:max-w-xs font-mono">
+            {{ selected.name }}
+          </span>
+          <span v-if="selected" class="text-muted/40">/</span>
+          <span class="font-bold text-ink truncate">{{ pageTitle }}</span>
         </div>
       </div>
 
-      <div class="flex items-center gap-2">
-        <NotificationShowcaseModal />
-        <div
-          v-if="route.name === 'dashboard'"
-          class="flex flex-wrap items-center gap-2"
-        >
-          <IconButton
-            label="Start All"
-            variant="accent"
-            :disabled="bulkLoading || startableCount === 0"
-            @click="store.runBulkAction('startAll')"
-          />
-          <IconButton
-            label="Stop All"
-            variant="danger"
-            :disabled="bulkLoading || runningCount === 0"
-            @click="store.runBulkAction('stopAll')"
-          />
-          <IconButton
-            label="Restart All"
-            :disabled="bulkLoading || runningCount === 0"
-            @click="store.runBulkAction('restartAll')"
-          />
+      <!-- Center/Right: Status Pill & Bulk Actions -->
+      <div class="flex items-center gap-3 shrink-0">
+        <!-- Workspace Summary Status Pill -->
+        <div class="hidden md:flex items-center gap-2 rounded-full border border-line bg-elevated/50 px-3 py-1 text-xs">
+          <span class="flex items-center gap-1.5 text-running font-medium">
+            <span class="h-2 w-2 rounded-full bg-running animate-pulse-subtle"></span>
+            {{ runningCount }} Running
+          </span>
+          <span class="text-muted/40">|</span>
+          <span class="text-stopped font-medium">
+            {{ projects.length - runningCount }} Stopped
+          </span>
+        </div>
+
+        <!-- Action Buttons & Notification Modal -->
+        <div class="flex items-center gap-2">
+          <NotificationShowcaseModal />
+          <div
+            v-if="route.name === 'dashboard'"
+            class="flex flex-wrap items-center gap-2"
+          >
+            <IconButton
+              label="Start All"
+              variant="accent"
+              :disabled="bulkLoading || startableCount === 0"
+              @click="store.runBulkAction('startAll')"
+            />
+            <IconButton
+              label="Stop All"
+              variant="danger"
+              :disabled="bulkLoading || runningCount === 0"
+              @click="store.runBulkAction('stopAll')"
+            />
+            <IconButton
+              label="Restart All"
+              :disabled="bulkLoading || runningCount === 0"
+              @click="store.runBulkAction('restartAll')"
+            />
+          </div>
         </div>
       </div>
     </nav>
 
+    <!-- Error Banner -->
     <div
       v-if="error"
-      class="border-b border-stopped/40 bg-stopped/10 px-6 py-2 text-sm text-stopped"
+      class="border-b border-stopped/40 bg-stopped/15 px-6 py-2 text-xs font-medium text-stopped flex items-center justify-between"
     >
-      {{ error }}
+      <span>⚠️ {{ error }}</span>
+      <button type="button" class="underline text-[11px] text-stopped/80 hover:text-stopped" @click="store.error = null">Dismiss</button>
     </div>
 
+    <!-- Main Workspace Body: AppSidebar on Left, RouterView on Right -->
     <div class="flex min-h-0 flex-1">
-      <AppSidebar />
+      <AppSidebar v-if="showProjectSidebar && route.meta.requiresProjectSidebar !== false" />
       <RouterView />
     </div>
   </div>

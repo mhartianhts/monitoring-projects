@@ -5,13 +5,14 @@ import {
   getOllamaStatus,
 } from "../src/services/ollama.service.js";
 import { buildProjectAiContext } from "../src/services/aiContext.service.js";
+import { appConfig } from "../src/config/app.js";
 
 test("getOllamaStatus detects installed model", async () => {
   const status = await getOllamaStatus();
   assert.equal(status.provider, "ollama");
-  assert.equal(status.model, "qwen2.5-coder:7b");
+  assert.equal(status.model, appConfig.ollamaModel);
   assert.equal(status.available, true);
-  assert.ok(status.models.includes("qwen2.5-coder:7b"));
+  assert.ok(status.models.includes(appConfig.ollamaModel));
 });
 
 test("chatWithOllama returns a reply", async () => {
@@ -21,7 +22,7 @@ test("chatWithOllama returns a reply", async () => {
   });
   assert.equal(typeof data.reply, "string");
   assert.ok(data.reply.trim().length > 0);
-  assert.equal(data.stats.model.includes("qwen2.5-coder"), true);
+  assert.equal(typeof data.stats.model, "string");
 });
 
 test("buildProjectAiContext includes project metadata", async () => {

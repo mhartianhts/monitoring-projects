@@ -10,16 +10,31 @@ const BASE_SYSTEM_PROMPT = [
 ].join(" ");
 
 const COMMIT_SYSTEM_PROMPT = [
-  "You write concise git commit messages for a local project.",
-  "IMPORTANT: The commit message MUST be written in Indonesian (Bahasa Indonesia).",
-  "Use conventional commit style when suitable (feat/fix/chore/refactor/docs),",
-  "but keep the description after the type prefix in Indonesian.",
-  "Example: feat: tambah tombol generate commit message",
-  "Example: fix: perbaiki error parsing log project",
-  "Base the message ONLY on the provided git status and diff.",
-  "Reply with ONLY the commit message, ideally 1 short subject line.",
-  "Optional body is allowed only if truly needed. No quotes. No markdown fences. No explanation.",
-].join(" ");
+  "Anda adalah Senior Software Engineer dan Tech Lead yang sangat teliti dalam menyusun Git Commit Message berkualitas tinggi.",
+  "TUGAS UTAMA: Analisis perubahan kode (git status dan git diff) secara mendalam, lalu buat commit message profesional, deskriptif, dan berkelas dalam Bahasa Indonesia.",
+  "",
+  "ATURAN DAN STANDAR KUALITAS:",
+  "1. SUBJECT LINE (Baris 1):",
+  "   - Format Conventional Commits: `<type>(<scope>): <ringkasan singkat esensi perubahan>`",
+  "   - Tipe yang diperbolehkan: feat, fix, refactor, perf, chore, docs, test, style.",
+  "   - Scope menunjukkan modul/fitur utama (contoh: auth, admin, auto-grade, router, store).",
+  "   - Huruf kecil, padat, jelas, tanpa titik di akhir.",
+  "",
+  "2. BARIS KOSONG (Baris 2): Wajib ada 1 baris pemisah kosong.",
+  "",
+  "3. BODY / RINCIAN PERUBAHAN (Baris 3 ke atas):",
+  "   - Sajikan dalam 3 sampai 6 poin penting menggunakan tanda dash (`- `).",
+  "   - DILARANG KERAS membuat kalimat repetitif/monoton (contoh buruk: 'tambah komponen X di file A', 'tambah komponen X di file B').",
+  "   - Sintesiskan perubahan berdasarkan fungsionalitas dan arsitektur (UI/Komponen, Routing, State Management, Logika Bisnis/Service, API).",
+  "   - Gunakan kata kerja aktif teknis bervariasi: 'Implementasikan', 'Integrasikan', 'Sediakan', 'Konfigurasikan', 'Perbarui logika', 'Optimasi', 'Hubungkan'.",
+  "   - Jelaskan APA yang dilakukan dan BAGAIMANA fungsionalitasnya berjalan secara substantif.",
+  "",
+  "4. FORMATTING:",
+  "   - DILARANG output markdown code fences (```).",
+  "   - DILARANG menggunakan tanda kutip pembungkus.",
+  "   - DILARANG memberikan salam, basa-basi, atau teks penjelasan di luar isi commit message.",
+  "   - 100% Bahasa Indonesia baku dan profesional.",
+].join("\n");
 
 const buildHint = (message = "") => {
   const lower = String(message).toLowerCase();
@@ -80,7 +95,7 @@ const fetchWithTimeout = async (
   }
 };
 
-const callOllamaChat = async (messages) => {
+export const streamCallOllamaChat = async (messages, onChunk) => {
   let res;
   try {
     res = await fetchWithTimeout(`${appConfig.ollamaBaseUrl}/api/chat`, {
@@ -89,7 +104,7 @@ const callOllamaChat = async (messages) => {
       body: JSON.stringify({
         model: appConfig.ollamaModel,
         messages,
-        stream: false,
+        stream: true,
       }),
     });
   } catch (error) {
@@ -101,37 +116,87 @@ const callOllamaChat = async (messages) => {
     );
   }
 
-  const raw = await res.text();
-  let data = null;
-  try {
-    data = raw ? JSON.parse(raw) : null;
-  } catch {
-    data = null;
-  }
-
   if (!res.ok) {
-    const detail = data?.error || raw || `Ollama gagal (HTTP ${res.status})`;
+    const raw = await res.text();
     throw createServiceError(
-      String(detail),
+      raw || `Ollama gagal (HTTP ${res.status})`,
       res.status === 404 ? 404 : 502,
-      String(detail),
+      raw,
     );
   }
 
-  const reply = String(data?.message?.content || "").trim();
+  let fullReply = "";
+  let finalStats = null;
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder("utf-8");
+  let buffer = "";
+
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+
+    buffer += decoder.decode(value, { stream: true });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() || "";
+
+    for (const line of lines) {
+      if (!line.trim()) continue;
+      try {
+        const json = JSON.parse(line.trim());
+        const token = json?.message?.content || "";
+        if (token) {
+          fullReply += token;
+          if (onChunk) onChunk(token);
+        }
+        if (json?.done) {
+          finalStats = {
+            model: json?.model || appConfig.ollamaModel,
+            totalDurationNs: json?.total_duration ?? null,
+            evalCount: json?.eval_count ?? null,
+            promptEvalCount: json?.prompt_eval_count ?? null,
+          };
+        }
+      } catch {
+        // ignore chunk parse error
+      }
+    }
+  }
+
+  if (buffer.trim()) {
+    try {
+      const json = JSON.parse(buffer.trim());
+      const token = json?.message?.content || "";
+      if (token) {
+        fullReply += token;
+        if (onChunk) onChunk(token);
+      }
+      if (json?.done) {
+        finalStats = {
+          model: json?.model || appConfig.ollamaModel,
+          totalDurationNs: json?.total_duration ?? null,
+          evalCount: json?.eval_count ?? null,
+          promptEvalCount: json?.prompt_eval_count ?? null,
+        };
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  const reply = fullReply.trim();
   if (!reply) {
     throw createServiceError("Ollama tidak mengembalikan jawaban", 502);
   }
 
   return {
     reply,
-    stats: {
-      model: data?.model || appConfig.ollamaModel,
-      totalDurationNs: data?.total_duration ?? null,
-      evalCount: data?.eval_count ?? null,
-      promptEvalCount: data?.prompt_eval_count ?? null,
-    },
+    stats: finalStats || { model: appConfig.ollamaModel },
   };
+};
+
+const callOllamaChat = async (messages) => {
+  return streamCallOllamaChat(messages);
 };
 
 export const getOllamaStatus = async () => {
@@ -229,101 +294,6 @@ export const chatWithOllama = async ({
   return callOllamaChat(messages);
 };
 
-export const streamCallOllamaChat = async (messages, onChunk) => {
-  let res;
-  try {
-    res = await fetchWithTimeout(`${appConfig.ollamaBaseUrl}/api/chat`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: appConfig.ollamaModel,
-        messages,
-        stream: true,
-      }),
-    });
-  } catch (error) {
-    if (error.status) throw error;
-    throw createServiceError(
-      error.message || "Gagal terhubung ke Ollama",
-      503,
-      error.message,
-    );
-  }
-
-  if (!res.ok) {
-    const raw = await res.text();
-    throw createServiceError(
-      raw || `Ollama gagal (HTTP ${res.status})`,
-      res.status === 404 ? 404 : 502,
-      raw,
-    );
-  }
-
-  let fullReply = "";
-  let finalStats = null;
-
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder("utf-8");
-  let buffer = "";
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() || "";
-
-    for (const line of lines) {
-      if (!line.trim()) continue;
-      try {
-        const json = JSON.parse(line.trim());
-        const token = json?.message?.content || "";
-        if (token) {
-          fullReply += token;
-          if (onChunk) onChunk(token);
-        }
-        if (json?.done) {
-          finalStats = {
-            model: json?.model || appConfig.ollamaModel,
-            totalDurationNs: json?.total_duration ?? null,
-            evalCount: json?.eval_count ?? null,
-            promptEvalCount: json?.prompt_eval_count ?? null,
-          };
-        }
-      } catch {
-        // ignore chunk parse error
-      }
-    }
-  }
-
-  if (buffer.trim()) {
-    try {
-      const json = JSON.parse(buffer.trim());
-      const token = json?.message?.content || "";
-      if (token) {
-        fullReply += token;
-        if (onChunk) onChunk(token);
-      }
-      if (json?.done) {
-        finalStats = {
-          model: json?.model || appConfig.ollamaModel,
-          totalDurationNs: json?.total_duration ?? null,
-          evalCount: json?.eval_count ?? null,
-          promptEvalCount: json?.prompt_eval_count ?? null,
-        };
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  return {
-    reply: fullReply,
-    stats: finalStats || { model: appConfig.ollamaModel },
-  };
-};
-
 export const streamChatWithOllama = async ({
   message,
   history = [],
@@ -371,17 +341,28 @@ export const generateCommitMessageWithOllama = async ({ contextText }) => {
     {
       role: "user",
       content: [
-        "Buatkan commit message dalam Bahasa Indonesia dari konteks git berikut.",
-        "Wajib memakai Bahasa Indonesia. Jangan memakai bahasa Inggris.",
+        "Analisis data perubahan git di bawah ini dan susun Git Commit Message berkelas industri (Senior Engineer level) dalam Bahasa Indonesia.",
         "",
+        "PANDUAN PENULISAN:",
+        "1. Tulis Subject Line Conventional Commits yang akurat (contoh: feat(admin): tambah rute dan modul Auto-Grade v2).",
+        "2. Buat 3 - 5 poin rincian perubahan yang berbobot, menjelaskan arsitektur/fungsionalitas (UI, Routing, State Management, Business Logic).",
+        "",
+        "HINDARI POLA MONOTON:",
+        "❌ JANGAN menulis: '- tambah komponen X di folder A', '- tambah komponen X di file B' (repetitif monoton).",
+        "✔️ TULISLAH secara fungsional:",
+        "- Sediakan antarmuka visual modul baru beserta kontrol monitoring eksekusi",
+        "- Konfigurasikan pemetaan rute baru pada router table aplikasi",
+        "- Integrasikan state management untuk manajemen lifecycle dan caching data runner",
+        "",
+        "Konteks Perubahan Git:",
         contextText,
       ].join("\n"),
     },
   ]);
 
-  const cleaned = result.reply
-    .replace(/^```[\s\S]*?\n/, "")
-    .replace(/```$/, "")
+  let cleaned = result.reply
+    .replace(/^```[a-zA-Z]*\n?/, "")
+    .replace(/\n?```$/, "")
     .replace(/^["']|["']$/g, "")
     .trim();
 

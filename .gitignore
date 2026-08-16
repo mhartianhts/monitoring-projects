@@ -15,3 +15,6 @@ coverage/
 tmp*.tmp
 .claude
 docs
+.agents
+*.md
+briefs/

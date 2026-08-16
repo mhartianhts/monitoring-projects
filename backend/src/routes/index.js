@@ -1,10 +1,11 @@
 import { Router } from "express";
 import { createProjectsRouter } from "./projects.routes.js";
 import { createAiRouter } from "./ai.routes.js";
+import { createTracesRouter } from "./traces.routes.js";
 import { ok } from "../utils/response.js";
 import { appConfig } from "../config/app.js";
 
-export const createApiRouter = (processManager) => {
+export const createApiRouter = (processManager, io) => {
   const router = Router();
 
   router.get("/health", (_req, res) => {
@@ -22,5 +23,7 @@ export const createApiRouter = (processManager) => {
 
   router.use("/projects", createProjectsRouter(processManager));
   router.use("/ai", createAiRouter(processManager));
+  router.use("/traces", createTracesRouter(io));
   return router;
 };
+

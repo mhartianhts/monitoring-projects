@@ -10,10 +10,13 @@ export default defineConfig({
       "/api": {
         target: "http://127.0.0.1:7171",
         changeOrigin: true,
+        timeout: 86400000,
+        proxyTimeout: 86400000,
       },
       "/socket.io": {
         target: "http://127.0.0.1:7171",
         ws: true,
+        timeout: 86400000,
       },
     },
   },

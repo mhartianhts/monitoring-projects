@@ -23,11 +23,15 @@ export const useProjectStore = defineStore("project", () => {
   const logs = ref<LogEntry[]>([]);
   const gitStatus = ref<GitStatus | null>(null);
   const editors = ref<EditorInfo[]>([]);
+  const showProjectSidebar = ref(true);
   let socketBound = false;
-
   const availableEditors = computed(() =>
     editors.value.filter((editor) => editor.available),
   );
+
+  const toggleProjectSidebar = () => {
+    showProjectSidebar.value = !showProjectSidebar.value;
+  };
 
   const selected = computed(
     () => projects.value.find((p) => p.id === selectedId.value) || null,
@@ -324,6 +328,8 @@ export const useProjectStore = defineStore("project", () => {
     gitStatus,
     editors,
     availableEditors,
+    showProjectSidebar,
+    toggleProjectSidebar,
     bindSocket,
     fetchProjects,
     fetchEditors,

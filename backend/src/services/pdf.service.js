@@ -85,7 +85,7 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
               const textHeight = doc.heightOfString(codeText, {
                 width: 475,
                 font: "Courier",
-                fontSize: 8.5,
+                fontSize: 8,
               });
 
               // Check page overflow
@@ -95,23 +95,23 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
 
               const currentY = doc.y;
               doc
-                .rect(50, currentY, 495, textHeight + 12)
-                .fill("#f8fafc");
+                .rect(50, currentY, 495, textHeight + 10)
+                .fill("#f1f5f9");
 
               doc
-                .rect(50, currentY, 495, textHeight + 12)
-                .stroke("#e2e8f0");
+                .rect(50, currentY, 495, textHeight + 10)
+                .stroke("#cbd5e1");
 
               doc
                 .fillColor("#0f172a")
                 .font("Courier")
-                .fontSize(8.5)
-                .text(codeText, 60, currentY + 6, {
+                .fontSize(8)
+                .text(codeText, 58, currentY + 5, {
                   width: 475,
-                  lineGap: 2,
+                  lineGap: 1.5,
                 });
 
-              doc.y = currentY + textHeight + 18;
+              doc.y = currentY + textHeight + 16;
             }
             codeBuffer = [];
             inCodeBlock = false;
@@ -129,7 +129,7 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
 
         const trimmed = line.trim();
         if (!trimmed) {
-          doc.moveDown(0.4);
+          doc.moveDown(0.3);
           continue;
         }
 
@@ -185,6 +185,80 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
           continue;
         }
 
+        // Blockquote / Callout (> ...)
+        if (trimmed.startsWith(">")) {
+          if (doc.y > doc.page.height - 60) doc.addPage();
+          const quoteText = stripInlineMarkdown(trimmed.replace(/^>\s*/, ""));
+          const currentY = doc.y;
+          const qHeight = doc.heightOfString(quoteText, {
+            width: 465,
+            font: "Helvetica",
+            fontSize: 9,
+          });
+
+          doc
+            .rect(50, currentY, 495, qHeight + 8)
+            .fill("#eff6ff");
+          doc
+            .rect(50, currentY, 3, qHeight + 8)
+            .fill("#3b82f6");
+
+          doc
+            .fillColor("#1e40af")
+            .font("Helvetica")
+            .fontSize(9)
+            .text(quoteText, 60, currentY + 4, {
+              width: 465,
+              lineGap: 2,
+            });
+
+          doc.y = currentY + qHeight + 12;
+          continue;
+        }
+
+        // Markdown Table Row (| col1 | col2 | col3 |)
+        if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+          // Ignore separator rows like |---|---|
+          if (/^\|(\s*[-:]+[-|\s:]*)\|$/.test(trimmed)) {
+            continue;
+          }
+
+          const rawCols = trimmed
+            .slice(1, -1)
+            .split("|")
+            .map((c) => stripInlineMarkdown(c.trim()));
+
+          if (rawCols.length > 0) {
+            if (doc.y > doc.page.height - 45) doc.addPage();
+            const currentY = doc.y;
+            const colWidth = Math.floor(495 / rawCols.length);
+
+            // Row background
+            doc
+              .rect(50, currentY, 495, 18)
+              .fill("#f8fafc");
+            doc
+              .rect(50, currentY, 495, 18)
+              .stroke("#e2e8f0");
+
+            rawCols.forEach((colText, cIdx) => {
+              const cellX = 55 + cIdx * colWidth;
+              doc
+                .fillColor("#1e293b")
+                .font("Helvetica-Bold")
+                .fontSize(8.5)
+                .text(colText, cellX, currentY + 4, {
+                  width: colWidth - 8,
+                  height: 14,
+                  ellipsis: true,
+                });
+            });
+
+            doc.y = currentY + 20;
+            continue;
+          }
+        }
+
         // Bullet point
         if (trimmed.startsWith("- ") || trimmed.startsWith("* ")) {
           if (doc.y > doc.page.height - 50) doc.addPage();
@@ -236,12 +310,20 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
         doc.moveDown(0.2);
       }
 
-      // Add Footer with Page Numbers to all pages
+      // Add Footer with Page Numbers to all pages safely without triggering auto-page-break
       const range = doc.bufferedPageRange();
       for (let i = range.start; i < range.start + range.count; i++) {
         doc.switchToPage(i);
+
+        // Temporarily disable bottom margin so footer coordinate doesn't trigger PDFKit auto-page-break
+        const oldBottomMargin = doc.page.margins.bottom;
+        doc.page.margins.bottom = 0;
+
+        const footerLineY = doc.page.height - 35;
+        const footerTextY = doc.page.height - 28;
+
         doc
-          .rect(50, doc.page.height - 40, 495, 0.5)
+          .rect(50, footerLineY, 495, 0.5)
           .fill("#cbd5e1");
 
         doc
@@ -249,10 +331,10 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
           .fontSize(8)
           .font("Helvetica")
           .text(
-            `Local Project Manager AI — Dokumentasi Dihasilkan Otomatis`,
+            "Local Project Manager AI — Dokumentasi Dihasilkan Otomatis",
             50,
-            doc.page.height - 30,
-            { align: "left" }
+            footerTextY,
+            { width: 320, align: "left", lineBreak: false }
           );
 
         doc
@@ -261,10 +343,12 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
           .font("Helvetica")
           .text(
             `Halaman ${i + 1} dari ${range.count}`,
-            50,
-            doc.page.height - 30,
-            { align: "right" }
+            doc.page.width - 50 - 150,
+            footerTextY,
+            { width: 150, align: "right", lineBreak: false }
           );
+
+        doc.page.margins.bottom = oldBottomMargin;
       }
 
       doc.end();

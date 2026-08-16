@@ -2,8 +2,9 @@ import { createRouter, createWebHistory } from "vue-router";
 import AppLayout from "../layouts/AppLayout.vue";
 import DashboardView from "../views/DashboardView.vue";
 import GitView from "../views/GitView.vue";
-import AiChatView from "../views/AiChatView.vue";
-import AiAgentView from "../views/AiAgentView.vue";
+import TracesView from "../views/TracesView.vue";
+import CodeGraphView from "../views/CodeGraphView.vue";
+import OpenApiView from "../views/OpenApiView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -16,21 +17,31 @@ export const router = createRouter({
           path: "",
           name: "dashboard",
           component: DashboardView,
+          meta: { requiresProjectSidebar: true },
         },
         {
           path: "git",
           name: "git",
           component: GitView,
+          meta: { requiresProjectSidebar: true },
         },
         {
-          path: "agent",
-          name: "agent",
-          component: AiAgentView,
+          path: "traces",
+          name: "traces",
+          component: TracesView,
+          meta: { requiresProjectSidebar: true },
         },
         {
-          path: "ai",
-          name: "ai",
-          component: AiChatView,
+          path: "graph",
+          name: "graph",
+          component: CodeGraphView,
+          meta: { requiresProjectSidebar: true },
+        },
+        {
+          path: "api-docs",
+          name: "api-docs",
+          component: OpenApiView,
+          meta: { requiresProjectSidebar: true },
         },
       ],
     },

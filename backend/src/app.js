@@ -29,7 +29,7 @@ export const createApp = () => {
     }),
   );
   app.use(express.json());
-  app.use("/api", createApiRouter(processManager));
+  app.use("/api", createApiRouter(processManager, io));
 
   app.use((err, _req, res, _next) => {
     console.error(err);

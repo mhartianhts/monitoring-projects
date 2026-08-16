@@ -173,10 +173,20 @@ export interface GitGeneratedDoc {
   markdown: string;
 }
 
-export interface GitDocsResponse {
+export interface GitDocJob {
+  id: string;
   projectId: string;
-  branch: string;
+  projectName?: string;
+  type: "all" | "technical" | "user_guide";
+  status: "processing" | "completed" | "failed";
+  progress: number;
+  step: string;
   docs: GitGeneratedDoc[];
+  error?: string | null;
+  hint?: string;
+  createdAt: number;
+  updatedAt: number;
 }
+
 
 

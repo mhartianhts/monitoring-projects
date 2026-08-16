@@ -250,7 +250,7 @@ export const getGitDiffSummary = async (
  */
 export const getBranchDiffForDocs = async (
   projectPath,
-  { maxChars = 20000 } = {},
+  { maxChars = 10000 } = {},
 ) => {
   const status = await getGitStatus(projectPath);
   if (!status.isRepo) {

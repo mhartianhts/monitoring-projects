@@ -7,10 +7,34 @@ import type {
   Project,
 } from "../types/project";
 
+const parseJsonResponse = async <T>(res: Response): Promise<ApiResponse<T>> => {
+  const text = await res.text();
+  if (!text || !text.trim()) {
+    throw new Error(
+      res.ok
+        ? "Server mengembalikan respon kosong."
+        : `Server gagal merespon (HTTP ${res.status}). Koneksi terputus atau server restart.`
+    );
+  }
+  try {
+    return JSON.parse(text) as ApiResponse<T>;
+  } catch {
+    if (!res.ok) {
+      throw new Error(`Server Error (${res.status}): ${text.slice(0, 150)}`);
+    }
+    throw new Error("Gagal memproses respon server (Format JSON tidak valid).");
+  }
+};
+
 const handle = async <T>(res: Response): Promise<T> => {
-  const body = (await res.json()) as ApiResponse<T>;
+  const body = await parseJsonResponse<T>(res);
   if (!res.ok || !body.success) {
-    throw new Error(body.error || `Request failed (${res.status})`);
+    const rawError = body.error || `Request failed (${res.status})`;
+    const hint = typeof (body.data as Record<string, unknown>)?.hint === "string"
+      ? (body.data as Record<string, unknown>).hint
+      : null;
+    const finalMsg = hint ? `${rawError} (${hint})` : rawError;
+    throw new Error(finalMsg);
   }
   return body.data as T;
 };
@@ -94,114 +118,20 @@ export const api = {
         hint: string;
       }>(r),
     ),
-  aiChat: async (
-    projectId: string,
-    message: string,
-    history: Array<{ role: "user" | "assistant"; content: string }> = [],
-  ) => {
-    const res = await fetch("/api/ai/chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, message, history }),
-    });
-    const body = (await res.json()) as ApiResponse<{
-      reply: string;
-      stats: unknown;
-      projectId: string;
-      history?: {
-        projectId: string;
-        updatedAt: number;
-        messages: Array<{
-          id: string;
-          role: "user" | "assistant";
-          content: string;
-          ts: number;
-        }>;
-      };
-      hint?: string;
-    }>;
-    if (!res.ok || !body.success) {
-      const hint =
-        body.data && typeof body.data === "object" && "hint" in body.data
-          ? String((body.data as { hint?: string }).hint || "")
-          : "";
-      const base = body.error || `Request failed (${res.status})`;
-      throw new Error(hint ? `${base}\n${hint}` : base);
-    }
-    return body.data as {
-      reply: string;
-      stats: unknown;
-      projectId: string;
-      history?: {
-        projectId: string;
-        updatedAt: number;
-        messages: Array<{
-          id: string;
-          role: "user" | "assistant";
-          content: string;
-          ts: number;
-        }>;
-      };
-    };
-  },
-  aiSaveHistory: (
-    projectId: string,
-    messages: Array<unknown>,
-    sessionId?: string
-  ) =>
-    postJson<import("../types/project").ChatHistoryResponse>("/api/ai/history/" + encodeURIComponent(projectId), {
-      messages,
-      sessionId,
-    }),
-  aiListSessions: (projectId: string) =>
-    fetch(`/api/ai/sessions/${encodeURIComponent(projectId)}`).then((r) =>
-      handle<import("../types/project").ChatSessionListResponse>(r)
-    ),
-  aiCreateSession: (projectId: string, title?: string) =>
-    postJson<{ session: import("../types/project").ChatSessionMeta; activeSessionId: string }>(
-      `/api/ai/sessions/${encodeURIComponent(projectId)}`,
-      { title }
-    ),
-  aiDeleteSession: (projectId: string, sessionId: string) =>
-    fetch(
-      `/api/ai/sessions/${encodeURIComponent(projectId)}/${encodeURIComponent(sessionId)}`,
-      { method: "DELETE" }
-    ).then((r) => handle<import("../types/project").ChatSessionListResponse>(r)),
-  aiRenameSession: (projectId: string, sessionId: string, title: string) =>
-    fetch(
-      `/api/ai/sessions/${encodeURIComponent(projectId)}/${encodeURIComponent(sessionId)}`,
-      {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title }),
-      }
-    ).then((r) => handle<import("../types/project").ChatSessionListResponse>(r)),
-  aiGetHistory: (projectId: string, sessionId?: string) => {
-    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-    return fetch(`/api/ai/history/${encodeURIComponent(projectId)}${q}`).then((r) =>
-      handle<import("../types/project").ChatHistoryResponse>(r)
-    );
-  },
-  aiClearHistory: (projectId: string, sessionId?: string) => {
-    const q = sessionId ? `?sessionId=${encodeURIComponent(sessionId)}` : "";
-    return fetch(`/api/ai/history/${encodeURIComponent(projectId)}${q}`, {
-      method: "DELETE",
-    }).then((r) => handle<import("../types/project").ChatHistoryResponse>(r));
-  },
   aiCommitMessage: async (projectId: string) => {
     const res = await fetch("/api/ai/commit-message", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ projectId }),
     });
-    const body = (await res.json()) as ApiResponse<{
+    const body = await parseJsonResponse<{
       message: string;
       stats: unknown;
       projectId: string;
       branch: string | null;
       changedFiles: string[];
       hint?: string;
-    }>;
+    }>(res);
     if (!res.ok || !body.success) {
       const hint =
         body.data && typeof body.data === "object" && "hint" in body.data
@@ -250,146 +180,93 @@ export const api = {
       `/api/projects/${id}/exec`,
       { command }
     ),
-  aiAgentRun: (
-    projectId: string,
-    message: string,
-    selectedFiles: string[] = [],
-    history: Array<{ role: "user" | "assistant"; content: string }> = []
-  ) =>
-    postJson<import("../types/project").AgentRunResponse>("/api/ai/agent-run", {
-      projectId,
-      message,
-      selectedFiles,
-      history,
-    }),
-  aiAgentAction: (
-    projectId: string,
-    actionType: "write_file" | "edit_file" | "run_command",
-    payload: Record<string, unknown>
-  ) =>
-    postJson<{ action: string; result: unknown }>("/api/ai/agent-action", {
-      projectId,
-      actionType,
-      ...payload,
-    }),
-  aiStreamChat: async (
-    projectId: string,
-    message: string,
-    history: Array<{ role: "user" | "assistant"; content: string }> = [],
-    onChunk: (text: string) => void,
-    sessionId?: string
-  ) => {
-    const res = await fetch("/api/ai/stream-chat", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, message, history, sessionId }),
-    });
 
-    if (!res.ok || !res.body) {
-      throw new Error(`Request failed (${res.status})`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalData: unknown = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-
-      for (const event of events) {
-        const line = event.trim();
-        if (line.startsWith("data: ")) {
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.type === "chunk" && parsed.text) {
-              onChunk(parsed.text);
-            } else if (parsed.type === "done") {
-              finalData = parsed;
-            } else if (parsed.type === "error") {
-              throw new Error(parsed.error || "Streaming error");
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-              throw e;
-            }
-          }
-        }
-      }
-    }
-    return finalData;
-  },
-  aiStreamAgentRun: async (
-    projectId: string,
-    message: string,
-    selectedFiles: string[] = [],
-    history: Array<{ role: "user" | "assistant"; content: string }> = [],
-    callbacks: {
-      onStep?: (step: import("../types/project").AgentStep) => void;
-      onChunk?: (text: string) => void;
-    } = {},
-    sessionId?: string
-  ) => {
-    const res = await fetch("/api/ai/stream-agent-run", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ projectId, message, selectedFiles, history, sessionId }),
-    });
-
-    if (!res.ok || !res.body) {
-      throw new Error(`Request failed (${res.status})`);
-    }
-
-    const reader = res.body.getReader();
-    const decoder = new TextDecoder();
-    let buffer = "";
-    let finalData: unknown = null;
-
-    while (true) {
-      const { done, value } = await reader.read();
-      if (done) break;
-
-      buffer += decoder.decode(value, { stream: true });
-      const events = buffer.split("\n\n");
-      buffer = events.pop() || "";
-
-      for (const event of events) {
-        const line = event.trim();
-        if (line.startsWith("data: ")) {
-          try {
-            const parsed = JSON.parse(line.slice(6));
-            if (parsed.type === "step" && parsed.step && callbacks.onStep) {
-              callbacks.onStep(parsed.step);
-            } else if (parsed.type === "chunk" && parsed.text && callbacks.onChunk) {
-              callbacks.onChunk(parsed.text);
-            } else if (parsed.type === "done") {
-              finalData = parsed;
-            } else if (parsed.type === "error") {
-              throw new Error(parsed.error || "Streaming error");
-            }
-          } catch (e) {
-            if (e instanceof Error && e.message !== "Unexpected end of JSON input") {
-              throw e;
-            }
-          }
-        }
-      }
-    }
-    return finalData as import("../types/project").AgentRunResponse;
-  },
-  aiGenerateGitDocs: (
+  aiStartDocJob: (
     projectId: string,
     type: "all" | "technical" | "user_guide" = "all",
   ) =>
-    postJson<import("../types/project").GitDocsResponse>("/api/ai/git-docs", {
+    postJson<import("../types/project").GitDocJob>("/api/ai/git-docs", {
       projectId,
       type,
     }),
+  aiGetDocJobStatus: (jobId: string) =>
+    fetch(`/api/ai/git-docs/job/${encodeURIComponent(jobId)}`).then((r) =>
+      handle<import("../types/project").GitDocJob>(r)
+    ),
+  aiGetActiveDocJob: (projectId: string) =>
+    fetch(`/api/ai/git-docs/active?projectId=${encodeURIComponent(projectId)}`).then((r) =>
+      handle<import("../types/project").GitDocJob | null>(r)
+    ),
   getGitDocDownloadUrl: (projectId: string, filename: string) =>
     `/api/ai/git-docs/download?projectId=${encodeURIComponent(projectId)}&filename=${encodeURIComponent(filename)}`,
+
+  // Traces & APM
+  listTraces: (params: {
+    projectId?: string;
+    search?: string;
+    status?: string;
+    minDuration?: number;
+    limit?: number;
+    offset?: number;
+  } = {}) => {
+    const q = new URLSearchParams();
+    if (params.projectId) q.set("projectId", params.projectId);
+    if (params.search) q.set("search", params.search);
+    if (params.status) q.set("status", params.status);
+    if (params.minDuration) q.set("minDuration", String(params.minDuration));
+    if (params.limit) q.set("limit", String(params.limit));
+    if (params.offset) q.set("offset", String(params.offset));
+    return fetch(`/api/traces?${q.toString()}`).then((r) =>
+      handle<import("../types/trace.types").ITraceListResponse>(r)
+    );
+  },
+  getTraceById: (traceId: string) =>
+    fetch(`/api/traces/${encodeURIComponent(traceId)}`).then((r) =>
+      handle<import("../types/trace.types").ITrace>(r)
+    ),
+  getTraceStats: (projectId?: string) => {
+    const q = projectId && projectId !== "all" ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return fetch(`/api/traces/stats${q}`).then((r) =>
+      handle<import("../types/trace.types").ITraceStats>(r)
+    );
+  },
+  clearTraces: (projectId?: string) => {
+    const q = projectId && projectId !== "all" ? `?projectId=${encodeURIComponent(projectId)}` : "";
+    return fetch(`/api/traces/clear${q}`, { method: "DELETE" }).then((r) => handle(r));
+  },
+  generateMockTraces: (count = 6, projectId = "backend-aira") =>
+    postJson<{ count: number; generated: import("../types/trace.types").ITrace[] }>("/api/traces/mock", {
+      count,
+      projectId,
+    }),
+
+  // Code Graph & Architecture
+  getCodeGraph: (projectId: string) =>
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/graph`).then((r) =>
+      handle<import("../types/codeGraph.types").ICodeGraphData>(r)
+    ),
+  getCodeGraphStats: (projectId: string) =>
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/graph/stats`).then((r) =>
+      handle<import("../types/codeGraph.types").IGraphStats>(r)
+    ),
+
+  // OpenAPI & API Client
+  getOpenApiSpec: (projectId: string) =>
+    fetch(`/api/projects/${encodeURIComponent(projectId)}/openapi`).then((r) =>
+      handle<import("../types/openapi.types").IOpenApiSpecResponse>(r)
+    ),
+  sendApiRequest: (
+    projectId: string,
+    params: {
+      method: string;
+      urlPath: string;
+      headers?: Record<string, string>;
+      queryParams?: Record<string, any>;
+      body?: any;
+    }
+  ) =>
+    postJson<import("../types/openapi.types").IApiProxyResponse>(
+      `/api/projects/${encodeURIComponent(projectId)}/api-client/send`,
+      params
+    ),
 };
