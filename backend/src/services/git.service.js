@@ -250,7 +250,7 @@ export const getGitDiffSummary = async (
  */
 export const getBranchDiffForDocs = async (
   projectPath,
-  { maxChars = 10000 } = {},
+  { maxChars = 80000, targetBaseBranch = "" } = {},
 ) => {
   const status = await getGitStatus(projectPath);
   if (!status.isRepo) {
@@ -269,57 +269,70 @@ export const getBranchDiffForDocs = async (
   const branches = status.branches || [];
 
   let baseBranch = null;
-  if (branch !== "main" && branches.includes("main")) {
-    baseBranch = "main";
-  } else if (branch !== "master" && branches.includes("master")) {
-    baseBranch = "master";
+  const cleanTarget = String(targetBaseBranch || "").trim();
+
+  if (cleanTarget && cleanTarget !== "none" && cleanTarget !== branch) {
+    baseBranch = cleanTarget;
+  } else if (!cleanTarget) {
+    // Jika tidak diisi sama sekali, gunakan main/master hanya sebagai fallback default dasar
+    if (branch !== "main" && branches.includes("main")) {
+      baseBranch = "main";
+    } else if (branch !== "master" && branches.includes("master")) {
+      baseBranch = "master";
+    }
   }
 
-  const parts = [];
-  parts.push(`Current Branch: ${branch}`);
+  const headerParts = [];
+  headerParts.push(`Current Branch: ${branch}`);
   if (baseBranch) {
-    parts.push(`Comparing against base branch: ${baseBranch}`);
+    headerParts.push(`Comparing against base branch: ${baseBranch}`);
   }
 
+  const bodyParts = [];
+
   if (baseBranch) {
+    // 1. Full Commit Log in branch
     const logRes = await safeGit([
       "log",
       `${baseBranch}..${branch}`,
       "--oneline",
       "-n",
-      "30",
+      "100",
     ]);
     if (logRes.stdout) {
-      parts.push("### Branch Commits:\n" + logRes.stdout);
+      headerParts.push("### Branch Commits:\n" + logRes.stdout);
     }
 
+    // 2. Full Stat Summary (Daftar semua file yang berubah vs base branch)
     const branchStat = await safeGit([
       "diff",
       "--stat",
       `${baseBranch}...${branch}`,
     ]);
     if (branchStat.stdout) {
-      parts.push(
+      headerParts.push(
         "### Branch Stat vs " + baseBranch + ":\n" + branchStat.stdout,
       );
     }
 
+    // 3. Diff content
     const branchDiff = await safeGit(["diff", `${baseBranch}...${branch}`]);
     if (branchDiff.stdout) {
-      parts.push(
+      bodyParts.push(
         "### Branch Diff vs " + baseBranch + ":\n" + branchDiff.stdout,
       );
     }
   }
 
+  // 4. Local changes
   const localStat = await safeGit(["diff", "--stat", "HEAD"]);
   if (localStat.stdout) {
-    parts.push("### Local Uncommitted Stat:\n" + localStat.stdout);
+    headerParts.push("### Local Uncommitted Stat:\n" + localStat.stdout);
   }
 
   const localDiff = await safeGit(["diff", "HEAD"]);
   if (localDiff.stdout) {
-    parts.push("### Local Uncommitted Diff:\n" + localDiff.stdout);
+    bodyParts.push("### Local Uncommitted Diff:\n" + localDiff.stdout);
   }
 
   const untracked = await safeGit([
@@ -328,7 +341,7 @@ export const getBranchDiffForDocs = async (
     "--exclude-standard",
   ]);
   if (untracked.stdout) {
-    parts.push(
+    headerParts.push(
       "### Untracked Files:\n" +
         untracked.stdout
           .split(/\r?\n/)
@@ -338,13 +351,18 @@ export const getBranchDiffForDocs = async (
     );
   }
 
-  const fullContent = parts.join("\n\n");
+  // Header content selalu dipertahankan utuh
+  const headerContent = headerParts.join("\n\n");
+  const remainingChars = Math.max(10000, maxChars - headerContent.length);
+  const bodyContent = truncateText(bodyParts.join("\n\n"), remainingChars);
+
+  const fullContent = [headerContent, bodyContent].filter(Boolean).join("\n\n");
 
   return {
     branch,
     baseBranch,
     changedFiles: status.changedFiles,
-    summary: truncateText(fullContent, maxChars),
+    summary: fullContent,
   };
 };
 

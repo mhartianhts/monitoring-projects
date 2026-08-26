@@ -173,19 +173,78 @@ export interface GitGeneratedDoc {
   markdown: string;
 }
 
+export interface DocScreenshotSlot {
+  id: string;
+  section: string;
+  instruction: string;
+  sampleCaption?: string;
+}
+
 export interface GitDocJob {
   id: string;
   projectId: string;
   projectName?: string;
   type: "all" | "technical" | "user_guide";
-  status: "processing" | "completed" | "failed";
+  model?: string;
+  status: "processing" | "awaiting_screenshots" | "completed" | "failed";
   progress: number;
   step: string;
+  requestedScreenshots?: DocScreenshotSlot[];
   docs: GitGeneratedDoc[];
   error?: string | null;
   hint?: string;
   createdAt: number;
   updatedAt: number;
+}
+
+export interface TokenPortalModel {
+  id: string;
+  name: string;
+  context: string;
+  description: string;
+  capabilities: string[];
+  recommended?: boolean;
+}
+
+export interface TokenPortalModelsResponse {
+  defaultModel: string;
+  models: TokenPortalModel[];
+}
+
+export interface AvailableFolder {
+  id: string;
+  name: string;
+  folderName: string;
+  path: string;
+  type: string;
+  start: string | null;
+  stop: string | null;
+  port: number | null;
+  url: string | null;
+  cwd: string;
+  hasConfig: boolean;
+  configSource: "file" | "auto" | null;
+  configError: string | null;
+  isManaged: boolean;
+  enabled: boolean;
+}
+
+export interface ManagedProject {
+  id: string;
+  name: string;
+  path: string;
+  type: string;
+  start: string | null;
+  stop: string | null;
+  port: number | null;
+  url: string | null;
+  cwd: string;
+  enabled: boolean;
+}
+
+export interface ManagedProjectsStore {
+  initialized: boolean;
+  projects: ManagedProject[];
 }
 
 

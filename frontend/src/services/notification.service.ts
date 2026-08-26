@@ -152,6 +152,14 @@ export const notify = {
     });
   },
 
+  toastSuccess(title: string, timer = 3500) {
+    return this.toast(title, "success", timer);
+  },
+
+  toastError(title: string, timer = 3500) {
+    return this.toast(title, "error", timer);
+  },
+
   /**
    * Indicator Loading / Processing
    */

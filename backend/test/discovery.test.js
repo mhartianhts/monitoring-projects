@@ -3,11 +3,14 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
-import { discoverProjects } from "../src/services/projectDiscovery.service.js";
+import {
+  discoverProjects,
+  scanAvailableFolders,
+} from "../src/services/projectDiscovery.service.js";
 import { autoDetectConfig } from "../src/services/autoDetect.service.js";
 import { LogBuffer, stripAnsi } from "../src/process/logBuffer.js";
 
-test("discoverProjects reads folders and config", () => {
+test("scanAvailableFolders reads folders and config", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lpm-"));
   const projectDir = path.join(root, "demo-app");
   fs.mkdirSync(projectDir);
@@ -22,16 +25,16 @@ test("discoverProjects reads folders and config", () => {
   );
   fs.mkdirSync(path.join(root, "empty-folder"));
 
-  const projects = discoverProjects(root);
-  assert.equal(projects.length, 2);
-  const demo = projects.find((p) => p.id === "demo-app");
+  const folders = scanAvailableFolders(root);
+  assert.equal(folders.length, 2);
+  const demo = folders.find((p) => p.id === "demo-app");
   assert.ok(demo);
   assert.equal(demo.hasConfig, true);
   assert.equal(demo.configSource, "file");
   assert.equal(demo.name, "Demo App");
   assert.equal(demo.port, 3000);
 
-  const bare = projects.find((p) => p.id === "empty-folder");
+  const bare = folders.find((p) => p.id === "empty-folder");
   assert.equal(bare.hasConfig, false);
   assert.equal(bare.configSource, null);
 });
@@ -82,15 +85,15 @@ test("autoDetectConfig detects docker compose", () => {
   assert.equal(config.stop, "docker compose down");
 });
 
-test("discoverProjects uses auto-detect when config missing", () => {
+test("scanAvailableFolders uses auto-detect when config missing", () => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "lpm-auto-"));
   const projectDir = path.join(root, "flask-app");
   fs.mkdirSync(projectDir);
   fs.writeFileSync(path.join(projectDir, "app.py"), "print('hi')");
   fs.writeFileSync(path.join(projectDir, "requirements.txt"), "flask\n");
 
-  const projects = discoverProjects(root);
-  const app = projects.find((p) => p.id === "flask-app");
+  const folders = scanAvailableFolders(root);
+  const app = folders.find((p) => p.id === "flask-app");
   assert.ok(app);
   assert.equal(app.hasConfig, true);
   assert.equal(app.configSource, "auto");
@@ -121,12 +124,13 @@ test("stripAnsi removes werkzeug/color codes", () => {
   assert.equal(buffer.get("flask")[0].line, "Press CTRL+C to quit");
 });
 
-test("discoverProjects includes default extra dms2024cery", () => {
+test("discoverProjects returns managed active projects", () => {
   const projects = discoverProjects();
-  const dms = projects.find((p) => p.id === "dms2024cery");
-  assert.ok(dms, "dms2024cery harus muncul dari extra-projects");
-  assert.equal(dms.configSource, "extra");
-  assert.equal(dms.path, "C:\\xampp\\htdocs\\dms2024cery");
-  assert.equal(dms.url, "http://localhost/dms2024cery");
-  assert.equal(dms.hasConfig, fs.existsSync(dms.path));
+  assert.ok(Array.isArray(projects));
+  for (const p of projects) {
+    assert.ok(p.id);
+    assert.ok(p.name);
+    assert.ok(p.path);
+    assert.equal(p.configSource, "managed");
+  }
 });

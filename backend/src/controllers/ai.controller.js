@@ -1,9 +1,10 @@
 import { badRequest, fail, ok } from "../utils/response.js";
 import {
-  chatWithOllama,
-  generateCommitMessageWithOllama,
-  getOllamaStatus,
-} from "../services/ollama.service.js";
+  chatWithTokenPortal,
+  generateCommitMessageWithTokenPortal,
+  getTokenPortalModels,
+  getTokenPortalStatus,
+} from "../services/tokenportal.service.js";
 import {
   buildProjectAiContext,
   requireProjectOrThrow,
@@ -11,6 +12,8 @@ import {
 import { getBranchDiffForDocs } from "../services/git.service.js";
 import {
   createPdfFromMarkdown,
+  deletePdfDocument,
+  listSavedPdfDocuments,
   savePdfDocument,
 } from "../services/pdf.service.js";
 import {
@@ -23,13 +26,23 @@ import path from "node:path";
 import {
   getActiveDocJobForProject,
   getDocJob,
+  resumeDocJobWithScreenshots,
   startDocJob,
 } from "../services/aiDocJob.service.js";
 
 export const createAiController = (processManager) => {
   const status = async (_req, res) => {
     try {
-      const data = await getOllamaStatus();
+      const data = await getTokenPortalStatus();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const models = async (_req, res) => {
+    try {
+      const data = await getTokenPortalModels();
       return ok(res, data);
     } catch (error) {
       return fail(res, error.message, error.status || 500);
@@ -39,6 +52,7 @@ export const createAiController = (processManager) => {
   const commitMessage = async (req, res) => {
     try {
       const project = requireProjectOrThrow(req.body?.projectId);
+      const chosenModel = String(req.body?.model || "").trim();
       const {
         contextText,
         git,
@@ -55,10 +69,14 @@ export const createAiController = (processManager) => {
         return badRequest(res, "Tidak ada perubahan untuk di-commit");
       }
 
-      const data = await generateCommitMessageWithOllama({ contextText });
+      const data = await generateCommitMessageWithTokenPortal({
+        contextText,
+        model: chosenModel,
+      });
       return ok(res, {
         message: data.message,
         stats: data.stats,
+        model: data.model,
         projectId: enriched.id,
         branch: git.branch,
         changedFiles: git.changedFiles,
@@ -74,9 +92,16 @@ export const createAiController = (processManager) => {
     try {
       const project = requireProjectOrThrow(req.body?.projectId);
       const docType = String(req.body?.type || req.body?.docType || "all").toLowerCase();
+      const chosenModel = String(req.body?.model || "").trim();
+      const baseBranch = String(req.body?.baseBranch || "").trim();
 
       // Start asynchronous background job immediately
-      const job = startDocJob({ project, docType });
+      const job = startDocJob({
+        project,
+        docType,
+        model: chosenModel,
+        baseBranch,
+      });
       return ok(res, job);
     } catch (error) {
       return fail(res, error.message, error.status || 500, {
@@ -129,6 +154,113 @@ export const createAiController = (processManager) => {
     }
   };
 
+  const submitDocScreenshots = async (req, res) => {
+    try {
+      const jobId = String(req.params?.jobId || "").trim();
+      const job = getDocJob(jobId);
+      if (!job) return fail(res, "Job tidak ditemukan", 404);
+
+      const project = requireProjectOrThrow(job.projectId);
+      const files = req.files || [];
+      const slotsMetaRaw = req.body?.slots || "[]";
+      let slotsMeta = [];
+      try {
+        slotsMeta = typeof slotsMetaRaw === "string" ? JSON.parse(slotsMetaRaw) : slotsMetaRaw;
+      } catch {
+        slotsMeta = [];
+      }
+
+      // Pastikan folder temp untuk screenshot ada
+      const tempDir = path.join(project.path, "docs", ".tmp_screenshots");
+      if (!fs.existsSync(tempDir)) {
+        await fs.promises.mkdir(tempDir, { recursive: true });
+      }
+
+      // Map uploaded files to slots
+      const uploadedScreenshots = [];
+      for (const file of files) {
+        // file.fieldname bisa berupa 'slot_1', 'screenshot_slot_1', dsb.
+        const slotId = file.fieldname.replace(/^screenshot_/, "");
+        const meta = slotsMeta.find((m) => m.id === slotId) || {};
+        
+        const ext = path.extname(file.originalname) || ".png";
+        const cleanName = `${jobId}_${slotId}_${Date.now()}${ext}`;
+        const targetPath = path.join(tempDir, cleanName);
+
+        // Jika multer menggunakan memoryStorage, tulis buffer ke file
+        if (file.buffer) {
+          await fs.promises.writeFile(targetPath, file.buffer);
+        } else if (file.path) {
+          await fs.promises.copyFile(file.path, targetPath);
+        }
+
+        uploadedScreenshots.push({
+          id: slotId,
+          section: meta.section || slotId,
+          caption: meta.sampleCaption || meta.section || "Screenshot Antarmuka",
+          filePath: targetPath,
+          originalName: file.originalname,
+        });
+      }
+
+      // Lanjutkan job AI secara asinkron
+      void resumeDocJobWithScreenshots({
+        jobId,
+        uploadedScreenshots,
+        skipped: false,
+      });
+
+      return ok(res, getDocJob(jobId));
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const skipDocScreenshots = async (req, res) => {
+    try {
+      const jobId = String(req.params?.jobId || "").trim();
+      const job = getDocJob(jobId);
+      if (!job) return fail(res, "Job tidak ditemukan", 404);
+
+      // Lanjutkan job AI tanpa screenshot secara asinkron
+      void resumeDocJobWithScreenshots({
+        jobId,
+        uploadedScreenshots: [],
+        skipped: true,
+      });
+
+      return ok(res, getDocJob(jobId));
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const listGitDocs = async (req, res) => {
+    try {
+      const project = requireProjectOrThrow(req.query?.projectId);
+      const docs = await listSavedPdfDocuments(project.path);
+      return ok(res, docs);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const deleteGitDoc = async (req, res) => {
+    try {
+      const project = requireProjectOrThrow(req.query?.projectId);
+      const filename = String(req.query?.filename || "").trim();
+      if (!filename || filename.includes("..") || !filename.endsWith(".pdf")) {
+        return badRequest(res, "Filename PDF tidak valid");
+      }
+
+      await deletePdfDocument(project.path, filename);
+      const docs = await listSavedPdfDocuments(project.path);
+      return ok(res, docs);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
   const getMemory = async (req, res) => {
     try {
       const project = requireProjectOrThrow(req.params.projectId);
@@ -152,10 +284,15 @@ export const createAiController = (processManager) => {
 
   return {
     status,
+    models,
     commitMessage,
     generateGitDocs,
     getDocJobStatus,
+    submitDocScreenshots,
+    skipDocScreenshots,
+    listGitDocs,
     downloadGitDoc,
+    deleteGitDoc,
     getMemory,
     updateMemory,
   };

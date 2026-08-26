@@ -18,3 +18,5 @@ docs
 .agents
 *.md
 briefs/
+services/converter-service/venv
+__pycache__

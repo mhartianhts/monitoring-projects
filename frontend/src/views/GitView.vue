@@ -31,13 +31,13 @@ watch(
   { immediate: true },
 );
 
-const generateCommitMessage = async () => {
+const generateCommitMessage = async (model?: string) => {
   if (!selectedId.value || generatingCommit.value) return;
   generatingCommit.value = true;
   generateError.value = null;
   suggestedCommitMessage.value = null;
   try {
-    const data = await api.aiCommitMessage(selectedId.value);
+    const data = await api.aiCommitMessage(selectedId.value, model);
     suggestedCommitMessage.value = data.message;
   } catch (error) {
     generateError.value =

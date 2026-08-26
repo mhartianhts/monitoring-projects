@@ -297,6 +297,72 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
           continue;
         }
 
+        // Markdown Image (![alt](path))
+        const imgMatch = trimmed.match(/^!\[(.*?)\]\((.*?)\)$/);
+        if (imgMatch) {
+          const altCaption = stripInlineMarkdown(imgMatch[1]);
+          const rawImgPath = imgMatch[2].trim();
+          const resolvedImgPath = path.isAbsolute(rawImgPath)
+            ? rawImgPath
+            : path.resolve(process.cwd(), rawImgPath);
+
+          if (fs.existsSync(resolvedImgPath)) {
+            const maxImgWidth = 460;
+            const maxImgHeight = 210;
+            const blockHeight = maxImgHeight + (altCaption ? 32 : 16);
+
+            if (doc.y + blockHeight > doc.page.height - 50) {
+              doc.addPage();
+            }
+
+            doc.moveDown(0.4);
+            const startY = doc.y;
+            const targetX = 50 + Math.floor((495 - maxImgWidth) / 2);
+
+            try {
+              // Frame mockup background
+              doc
+                .rect(targetX - 4, startY, maxImgWidth + 8, maxImgHeight + 8)
+                .fill("#f8fafc");
+              doc
+                .rect(targetX - 4, startY, maxImgWidth + 8, maxImgHeight + 8)
+                .stroke("#e2e8f0");
+
+              doc.image(resolvedImgPath, targetX, startY + 4, {
+                fit: [maxImgWidth, maxImgHeight],
+                align: "center",
+                valign: "center",
+              });
+
+              const captionY = startY + maxImgHeight + 12;
+              if (altCaption) {
+                doc
+                  .fillColor("#64748b")
+                  .font("Helvetica-Oblique")
+                  .fontSize(8.5)
+                  .text(`Gambar: ${altCaption}`, 50, captionY, {
+                    width: 495,
+                    align: "center",
+                  });
+                doc.y = captionY + 14;
+              } else {
+                doc.y = captionY + 6;
+              }
+              doc.moveDown(0.3);
+              continue;
+            } catch {
+              // Fallback jika file gambar rusak/tidak didukung
+              doc
+                .fillColor("#94a3b8")
+                .font("Helvetica-Oblique")
+                .fontSize(8.5)
+                .text(`[Gambar: ${altCaption || "Tidak dapat dimuat"}]`, 50, doc.y);
+              doc.moveDown(0.2);
+              continue;
+            }
+          }
+        }
+
         // Standard Paragraph
         if (doc.y > doc.page.height - 50) doc.addPage();
         doc
@@ -359,10 +425,10 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
 };
 
 /**
- * Saves generated PDF buffer to a file in the project's docs/ directory.
+ * Saves generated PDF buffer and optional markdown to a file in the project's docs/ directory.
  * Returns file info object.
  */
-export const savePdfDocument = async (projectPath, filename, pdfBuffer) => {
+export const savePdfDocument = async (projectPath, filename, pdfBuffer, markdownContent = "") => {
   const docsDir = path.join(projectPath, "docs");
   if (!fs.existsSync(docsDir)) {
     await fs.promises.mkdir(docsDir, { recursive: true });
@@ -371,12 +437,102 @@ export const savePdfDocument = async (projectPath, filename, pdfBuffer) => {
   const filePath = path.join(docsDir, filename);
   await fs.promises.writeFile(filePath, pdfBuffer);
 
+  // Simpan markdown pendamping jika tersedia
+  if (markdownContent) {
+    const mdFilename = filename.replace(/\.pdf$/i, ".md");
+    const mdPath = path.join(docsDir, mdFilename);
+    try {
+      await fs.promises.writeFile(mdPath, markdownContent, "utf8");
+    } catch {
+      // ignore
+    }
+  }
+
   const stat = await fs.promises.stat(filePath);
   return {
     filename,
     filePath,
     relativePath: path.relative(projectPath, filePath),
     sizeBytes: stat.size,
-    createdAt: new Date().toISOString(),
+    createdAt: stat.birthtime ? stat.birthtime.toISOString() : new Date().toISOString(),
   };
+};
+
+/**
+ * Lists all existing generated PDF documents in the project's docs/ directory.
+ */
+export const listSavedPdfDocuments = async (projectPath) => {
+  const docsDir = path.join(projectPath, "docs");
+  if (!fs.existsSync(docsDir)) {
+    return [];
+  }
+
+  try {
+    const files = await fs.promises.readdir(docsDir, { withFileTypes: true });
+    const pdfFiles = files.filter(
+      (dirent) => dirent.isFile() && dirent.name.toLowerCase().endsWith(".pdf"),
+    );
+
+    const docList = [];
+    for (const file of pdfFiles) {
+      const filePath = path.join(docsDir, file.name);
+      const stat = await fs.promises.stat(filePath);
+      const isTech = file.name.toLowerCase().includes("teknis") || file.name.toLowerCase().includes("technical");
+      const isUserGuide = file.name.toLowerCase().includes("user_guide") || file.name.toLowerCase().includes("guide") || file.name.toLowerCase().includes("panduan");
+
+      // Coba baca file markdown pendamping jika ada
+      let markdown = "";
+      const mdFilename = file.name.replace(/\.pdf$/i, ".md");
+      const mdPath = path.join(docsDir, mdFilename);
+      if (fs.existsSync(mdPath)) {
+        try {
+          markdown = await fs.promises.readFile(mdPath, "utf8");
+        } catch {
+          markdown = "";
+        }
+      }
+
+      docList.push({
+        type: isTech ? "technical" : isUserGuide ? "user_guide" : "custom",
+        title: isTech
+          ? "Dokumentasi Teknikal"
+          : isUserGuide
+            ? "User Guide (Panduan Pengguna)"
+            : file.name.replace(/\.pdf$/i, ""),
+        filename: file.name,
+        relativePath: path.relative(projectPath, filePath),
+        sizeBytes: stat.size,
+        createdAt: (stat.birthtime || stat.mtime).toISOString(),
+        markdown,
+      });
+    }
+
+    // Urutkan dari yang paling baru
+    docList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+    return docList;
+  } catch {
+    return [];
+  }
+};
+
+/**
+ * Deletes a generated PDF document and its optional markdown from project's docs/ directory.
+ */
+export const deletePdfDocument = async (projectPath, filename) => {
+  const cleanFilename = path.basename(filename);
+  const filePath = path.join(projectPath, "docs", cleanFilename);
+  if (fs.existsSync(filePath)) {
+    await fs.promises.unlink(filePath);
+  }
+
+  const mdPath = path.join(projectPath, "docs", cleanFilename.replace(/\.pdf$/i, ".md"));
+  if (fs.existsSync(mdPath)) {
+    try {
+      await fs.promises.unlink(mdPath);
+    } catch {
+      // ignore
+    }
+  }
+
+  return true;
 };

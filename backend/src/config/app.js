@@ -13,9 +13,16 @@ export const appConfig = {
   logBufferSize: Number(process.env.LOG_BUFFER_SIZE || 2000),
   codexCliPath: process.env.CODEX_CLI_PATH || "",
   codexTimeoutMs: Number(process.env.CODEX_TIMEOUT_MS || 120000),
-  ollamaBaseUrl: (
-    process.env.OLLAMA_BASE_URL || "http://127.0.0.1:11434"
+  tokenportalApiKey: process.env.TOKENPORTAL_API_KEY || "",
+  tokenportalBaseUrl: (
+    process.env.TOKENPORTAL_BASE_URL || "https://api.tokenportal.id/v1"
   ).replace(/\/$/, ""),
-  ollamaModel: process.env.OLLAMA_MODEL || "qwen2.5-coder:7b",
-  ollamaTimeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS || 0),
+  tokenportalModel: process.env.TOKENPORTAL_MODEL || "kimi-k27-code",
+  tokenportalTimeoutMs: Number(process.env.TOKENPORTAL_TIMEOUT_MS || 60000),
+  webhookSecret: (process.env.WEBHOOK_SECRET || "").trim(),
+  webhookMaxInbox: Number(process.env.WEBHOOK_MAX_INBOX || 2000),
+  webhookMediaTimeoutMs: Number(process.env.WEBHOOK_MEDIA_TIMEOUT_MS || 20000),
+  webhookMaxMediaBytes: Number(
+    process.env.WEBHOOK_MAX_MEDIA_BYTES || 50 * 1024 * 1024,
+  ),
 };

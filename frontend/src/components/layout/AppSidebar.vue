@@ -4,6 +4,7 @@ import { useRoute } from "vue-router";
 import { storeToRefs } from "pinia";
 import { useProjectStore } from "../../stores/project.store";
 import StatusDot from "../project/StatusDot.vue";
+import ProjectManagerModal from "../project/ProjectManagerModal.vue";
 
 const route = useRoute();
 const store = useProjectStore();
@@ -11,6 +12,7 @@ const { projects, filtered, selectedId, selected, search, loading } = storeToRef
 
 const isCollapsed = ref(false);
 const showProjectPicker = ref(false);
+const showManagerModal = ref(false);
 const statusFilter = ref<"all" | "running" | "stopped" | "favorites">("all");
 
 const filteredProjects = computed(() => {
@@ -192,6 +194,18 @@ const toggleCollapse = () => {
             </button>
           </template>
         </div>
+
+        <!-- Tombol Buka Project Manager Modal -->
+        <div class="border-t border-line pt-2">
+          <button
+            type="button"
+            class="w-full flex items-center justify-center gap-1.5 rounded-lg border border-line bg-elevated/80 py-1.5 text-xs font-semibold text-accent hover:bg-elevated hover:border-accent/40 transition"
+            @click="showManagerModal = true; showProjectPicker = false"
+          >
+            <span>⚙️</span>
+            <span>Kelola & Pilih Projek</span>
+          </button>
+        </div>
       </div>
     </div>
 
@@ -230,61 +244,125 @@ const toggleCollapse = () => {
       </RouterLink>
 
       <RouterLink
-        :to="{ name: 'traces' }"
+        :to="{ name: 'env' }"
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
         :class="
-          route.name === 'traces'
+          route.name === 'env'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
             : 'text-muted hover:bg-elevated hover:text-ink'
         "
-        :title="isCollapsed ? 'Tracing & APM' : undefined"
+        :title="isCollapsed ? 'Env & Secrets Manager' : undefined"
       >
-        <span class="text-base shrink-0">📊</span>
-        <span v-if="!isCollapsed" class="truncate">Tracing & APM</span>
+        <span class="text-base shrink-0">🔐</span>
+        <span v-if="!isCollapsed" class="truncate">Env & Secrets</span>
       </RouterLink>
 
       <RouterLink
-        :to="{ name: 'graph' }"
+        :to="{ name: 'telegram' }"
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
         :class="
-          route.name === 'graph'
+          route.name === 'telegram'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
             : 'text-muted hover:bg-elevated hover:text-ink'
         "
-        :title="isCollapsed ? 'Code Graph' : undefined"
+        :title="isCollapsed ? 'Telegram Bot & Commands' : undefined"
       >
-        <span class="text-base shrink-0">🕸️</span>
-        <span v-if="!isCollapsed" class="truncate">Code Graph</span>
+        <span class="text-base shrink-0">🤖</span>
+        <span v-if="!isCollapsed" class="truncate">Telegram Bot</span>
       </RouterLink>
 
       <RouterLink
-        :to="{ name: 'api-docs' }"
+        :to="{ name: 'webhook' }"
         class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
         :class="
-          route.name === 'api-docs'
+          route.name === 'webhook'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
             : 'text-muted hover:bg-elevated hover:text-ink'
         "
-        :title="isCollapsed ? 'API & Swagger' : undefined"
+        :title="isCollapsed ? 'Chatbot Inbox (WhatsApp Webhook)' : undefined"
       >
-        <span class="text-base shrink-0">⚡</span>
-        <span v-if="!isCollapsed" class="truncate">API & Swagger</span>
+        <span class="text-base shrink-0">💬</span>
+        <span v-if="!isCollapsed" class="truncate">Chatbot Inbox</span>
+      </RouterLink>
+
+      <RouterLink
+        :to="{ name: 'docs' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        :class="
+          route.name === 'docs'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'AI Documentation' : undefined"
+      >
+        <span class="text-base shrink-0">📄</span>
+        <span v-if="!isCollapsed" class="truncate">AI Documentation</span>
+      </RouterLink>
+
+
+
+      <RouterLink
+        :to="{ name: 'converter' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        :class="
+          route.name === 'converter'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'Doc Converter (gRPC)' : undefined"
+      >
+        <span class="text-base shrink-0">🔄</span>
+        <span v-if="!isCollapsed" class="truncate">Doc Converter</span>
+      </RouterLink>
+
+      <RouterLink
+        :to="{ name: 'share' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        :class="
+          route.name === 'share'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'Local Share (AirDrop)' : undefined"
+      >
+        <span class="text-base shrink-0">📱</span>
+        <span v-if="!isCollapsed" class="truncate">Local Share</span>
       </RouterLink>
     </div>
 
     <!-- Sidebar Footer -->
-    <div class="border-t border-line p-2 text-[11px] text-muted flex items-center justify-between">
-      <span v-if="!isCollapsed" class="font-mono text-[10px] text-muted pl-1">{{ projects.length }} Project(s)</span>
-      <button
-        type="button"
-        class="rounded p-1.5 text-accent hover:bg-elevated hover:underline font-medium flex items-center gap-1.5 transition ml-auto"
-        :title="'Rescan projects folder'"
-        @click="store.fetchProjects()"
-      >
-        <span>🔄</span>
-        <span v-if="!isCollapsed" class="text-xs">Rescan</span>
-      </button>
+    <div class="border-t border-line p-2 text-[11px] text-muted flex items-center justify-between gap-1">
+      <span v-if="!isCollapsed" class="font-mono text-[10px] text-muted pl-1 truncate">
+        {{ projects.length }} Project(s)
+      </span>
+      <div class="flex items-center gap-1 ml-auto">
+        <button
+          type="button"
+          class="rounded p-1.5 text-accent hover:bg-elevated hover:underline font-medium flex items-center gap-1 transition"
+          title="Kelola & Pilih Projek"
+          @click="showManagerModal = true"
+        >
+          <span>⚙️</span>
+          <span v-if="!isCollapsed" class="text-xs">Kelola</span>
+        </button>
+
+        <button
+          type="button"
+          class="rounded p-1.5 text-muted hover:text-ink hover:bg-elevated transition"
+          title="Rescan project status"
+          @click="store.fetchProjects()"
+        >
+          <span>🔄</span>
+        </button>
+      </div>
     </div>
+
+    <!-- Project Manager Modal -->
+    <ProjectManagerModal
+      :show="showManagerModal"
+      @close="showManagerModal = false"
+      @updated="store.fetchProjects()"
+    />
   </aside>
 </template>
 

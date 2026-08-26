@@ -14,9 +14,12 @@ const { error, bulkLoading, projects, selected, showProjectSidebar } = storeToRe
 const pageTitle = computed(() => {
   if (route.name === 'dashboard') return 'Process Monitor';
   if (route.name === 'git') return 'Git Workspace';
-  if (route.name === 'traces') return 'Distributed Tracing & APM';
-  if (route.name === 'graph') return 'Codebase Knowledge Graph';
-  if (route.name === 'api-docs') return 'OpenAPI 3.0 & API Workspace';
+  if (route.name === 'env') return 'Environment & Secrets Manager';
+  if (route.name === 'telegram') return 'Telegram Bot & Commands';
+  if (route.name === 'webhook') return 'Chatbot Inbox';
+  if (route.name === 'docs') return 'AI Documentation Suite';
+  if (route.name === 'converter') return 'Document Converter (gRPC)';
+  if (route.name === 'share') return 'Instant Local Share';
   if (route.name === 'agent') return 'AI Agent Workspace';
   if (route.name === 'ai') return 'AI Chat';
   return 'Workspace';

@@ -1,0 +1,15 @@
+grpcio>=1.60.0
+grpcio-tools>=1.60.0
+protobuf>=4.25.0
+pdf2docx>=0.5.8
+docx2pdf>=0.1.8
+pypdf>=4.0.0
+python-docx>=1.1.0
+pywin32>=306; platform_system == "Windows"
+comtypes>=1.2.0; platform_system == "Windows"
+markdown>=3.6.0
+markdownify>=0.14.0
+pymupdf4llm>=0.0.17
+xhtml2pdf>=0.2.16
+reportlab>=4.2.0
+mammoth>=1.8.0

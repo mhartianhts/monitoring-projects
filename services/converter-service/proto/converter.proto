@@ -1,0 +1,71 @@
+syntax = "proto3";
+
+package converter;
+
+service FileConverterService {
+  // Check service health
+  rpc CheckHealth (HealthRequest) returns (HealthResponse);
+
+  // Get supported format mappings
+  rpc GetSupportedFormats (FormatListRequest) returns (FormatListResponse);
+
+  // Generic document conversion (from_format -> to_format)
+  rpc ConvertDocument (ConvertDocumentRequest) returns (ConvertResponse);
+
+  // Legacy/Specific RPCs
+  rpc ConvertPdfToDocx (ConvertRequest) returns (ConvertResponse);
+  rpc ConvertDocxToPdf (ConvertRequest) returns (ConvertResponse);
+}
+
+message HealthRequest {
+  string client_id = 1;
+}
+
+message HealthResponse {
+  bool is_healthy = 1;
+  string version = 2;
+  string message = 3;
+}
+
+message FormatListRequest {}
+
+message FormatTarget {
+  string format = 1;
+  string label = 2;
+  string extension = 3;
+  string description = 4;
+}
+
+message FormatSource {
+  string format = 1;
+  string label = 2;
+  string extension = 3;
+  repeated FormatTarget targets = 4;
+}
+
+message FormatListResponse {
+  repeated FormatSource sources = 1;
+}
+
+message ConvertDocumentRequest {
+  string filename = 1;
+  bytes file_content = 2;
+  string from_format = 3;
+  string to_format = 4;
+  map<string, string> options = 5;
+}
+
+message ConvertRequest {
+  string filename = 1;
+  bytes file_content = 2;
+  int32 start_page = 3;
+  int32 end_page = 4;
+}
+
+message ConvertResponse {
+  bool success = 1;
+  string message = 2;
+  string output_filename = 3;
+  bytes file_content = 4;
+  int64 processing_time_ms = 5;
+}

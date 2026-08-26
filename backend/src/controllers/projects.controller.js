@@ -3,6 +3,14 @@ import {
   findProject,
 } from "../services/projectDiscovery.service.js";
 import {
+  scanAvailableFolders,
+  readManagedStore,
+  syncSelectedFolders,
+  addCustomProject,
+  updateManagedProject,
+  removeManagedProject,
+} from "../services/managedProjects.service.js";
+import {
   sortProjectsByFavorite,
   toggleFavorite,
 } from "../services/preferences.service.js";
@@ -263,6 +271,68 @@ export const createProjectsController = (processManager) => {
     }
   };
 
+  const getAvailableFolders = (_req, res) => {
+    try {
+      const folders = scanAvailableFolders(_req.query.root || undefined);
+      return ok(res, folders);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const getManagedProjects = (_req, res) => {
+    try {
+      const data = readManagedStore();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const syncProjects = async (req, res) => {
+    try {
+      const folders = req.body?.folders;
+      if (!Array.isArray(folders)) {
+        return fail(res, "Field folders wajib berupa array", 400);
+      }
+      const data = syncSelectedFolders(folders);
+      await processManager.reconcileAll();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const addCustom = async (req, res) => {
+    try {
+      const data = addCustomProject(req.body);
+      await processManager.reconcileAll();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 400);
+    }
+  };
+
+  const updateManaged = async (req, res) => {
+    try {
+      const data = updateManagedProject(req.params.id, req.body);
+      await processManager.reconcileAll();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 400);
+    }
+  };
+
+  const removeManaged = async (req, res) => {
+    try {
+      const data = removeManagedProject(req.params.id);
+      await processManager.reconcileAll();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
   return {
     list,
     getOne,
@@ -286,5 +356,11 @@ export const createProjectsController = (processManager) => {
     gitCommitAction,
     gitPushAction,
     gitPullAction,
+    getAvailableFolders,
+    getManagedProjects,
+    syncProjects,
+    addCustom,
+    updateManaged,
+    removeManaged,
   };
 };

@@ -2,13 +2,16 @@ import { Router } from "express";
 import { createProjectsController } from "../controllers/projects.controller.js";
 import { createFilesRouter } from "./files.routes.js";
 import {
-  getProjectCodeGraph,
-  getProjectGraphStats,
-} from "../controllers/codeGraph.controller.js";
-import {
-  getOpenApiSpec,
-  executeApiRequest,
-} from "../controllers/openapi.controller.js";
+  getEnvFiles,
+  getEnvFileContent,
+  updateEnvFileContent,
+  handleCreateEnvFile,
+  handleDeleteEnvFile,
+  handleCompareEnvFiles,
+  handleSyncMissingKeys,
+  handleGenerateExample,
+  handleSwitchProfile,
+} from "../controllers/envManager.controller.js";
 
 export const createProjectsRouter = (processManager) => {
   const router = Router();
@@ -18,6 +21,12 @@ export const createProjectsRouter = (processManager) => {
 
   router.get("/", controller.list);
   router.get("/editors", controller.listEditors);
+  router.get("/available-folders", controller.getAvailableFolders);
+  router.get("/managed", controller.getManagedProjects);
+  router.post("/managed/sync", controller.syncProjects);
+  router.post("/managed/add", controller.addCustom);
+  router.put("/managed/:id", controller.updateManaged);
+  router.delete("/managed/:id", controller.removeManaged);
   router.post("/start-all", controller.startAll);
   router.post("/stop-all", controller.stopAll);
   router.post("/restart-all", controller.restartAll);
@@ -39,13 +48,16 @@ export const createProjectsRouter = (processManager) => {
   router.post("/:id/git/pull", controller.gitPullAction);
   router.post("/:id/git/push", controller.gitPushAction);
 
-  // Code Graph Routes
-  router.get("/:id/graph", getProjectCodeGraph);
-  router.get("/:id/graph/stats", getProjectGraphStats);
-
-  // OpenAPI & API Tester Routes
-  router.get("/:id/openapi", getOpenApiSpec);
-  router.post("/:id/api-client/send", executeApiRequest);
+  // Env Manager & Diff Checker Routes
+  router.get("/:id/env/files", getEnvFiles);
+  router.get("/:id/env/file", getEnvFileContent);
+  router.post("/:id/env/file", updateEnvFileContent);
+  router.post("/:id/env/create", handleCreateEnvFile);
+  router.delete("/:id/env/file", handleDeleteEnvFile);
+  router.post("/:id/env/compare", handleCompareEnvFiles);
+  router.post("/:id/env/sync", handleSyncMissingKeys);
+  router.post("/:id/env/generate-example", handleGenerateExample);
+  router.post("/:id/env/switch-profile", handleSwitchProfile);
 
   return router;
 };
