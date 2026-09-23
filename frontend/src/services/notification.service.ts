@@ -22,6 +22,7 @@ export const ToastSwal = Swal.mixin({
   timer: 3500,
   timerProgressBar: true,
   customClass: {
+    container: "custom-swal-toast-container",
     popup: "custom-swal-toast",
   },
   didOpen: (toast) => {

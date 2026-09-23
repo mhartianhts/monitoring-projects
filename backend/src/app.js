@@ -5,6 +5,7 @@ import { Server } from "socket.io";
 import { appConfig } from "./config/app.js";
 import { ProcessManager } from "./process/processManager.js";
 import { TelegramService } from "./services/telegram.service.js";
+import { TerminalService } from "./services/terminal.service.js";
 import { createApiRouter } from "./routes/index.js";
 import { registerSockets } from "./sockets/index.js";
 import { registerShutdownHook } from "./process/shutdownHook.js";
@@ -39,8 +40,11 @@ export const createApp = () => {
 
   const processManager = new ProcessManager({ io });
   void processManager.reattachAll();
-  registerShutdownHook(processManager);
-  registerSockets(io, processManager);
+
+  const terminalService = new TerminalService({ io });
+
+  registerShutdownHook(processManager, terminalService);
+  registerSockets(io, processManager, terminalService);
 
   const telegramService = new TelegramService({ processManager, io });
   void telegramService.initAllBots();
@@ -52,7 +56,10 @@ export const createApp = () => {
     }),
   );
   app.use(express.json({ limit: "2mb" }));
-  app.use("/api", createApiRouter(processManager, io, telegramService));
+  app.use(
+    "/api",
+    createApiRouter(processManager, io, telegramService, terminalService),
+  );
 
   app.use((err, _req, res, _next) => {
     console.error(err);
@@ -61,5 +68,5 @@ export const createApp = () => {
       .json({ success: false, error: err.message || "Internal error" });
   });
 
-  return { app, httpServer, processManager, io, telegramService };
+  return { app, httpServer, processManager, io, telegramService, terminalService };
 };

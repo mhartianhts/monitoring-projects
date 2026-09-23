@@ -11,17 +11,22 @@ const route = useRoute();
 const store = useProjectStore();
 const { error, bulkLoading, projects, selected, showProjectSidebar } = storeToRefs(store);
 
+const isProjectScopedRoute = computed(() => {
+  return ['dashboard', 'git', 'env', 'docs', 'terminal'].includes(String(route.name));
+});
+
 const pageTitle = computed(() => {
   if (route.name === 'dashboard') return 'Process Monitor';
   if (route.name === 'git') return 'Git Workspace';
   if (route.name === 'env') return 'Environment & Secrets Manager';
+  if (route.name === 'terminal') return 'Interactive Web Terminal';
   if (route.name === 'telegram') return 'Telegram Bot & Commands';
   if (route.name === 'webhook') return 'Chatbot Inbox';
   if (route.name === 'docs') return 'AI Documentation Suite';
   if (route.name === 'converter') return 'Document Converter (gRPC)';
   if (route.name === 'share') return 'Instant Local Share';
   if (route.name === 'agent') return 'AI Agent Workspace';
-  if (route.name === 'ai') return 'AI Chat';
+  if (route.name === 'chat' || route.name === 'ai') return 'AI Chatbot';
   return 'Workspace';
 });
 
@@ -61,10 +66,12 @@ onMounted(async () => {
         <div class="flex items-center gap-2 text-xs truncate">
           <span class="font-bold text-ink uppercase tracking-wider font-mono text-[11px] hidden sm:inline">Local PM</span>
           <span class="text-muted/40 hidden sm:inline">/</span>
-          <span v-if="selected" class="font-semibold text-accent truncate max-w-[150px] md:max-w-xs font-mono">
-            {{ selected.name }}
-          </span>
-          <span v-if="selected" class="text-muted/40">/</span>
+          <template v-if="isProjectScopedRoute && selected">
+            <span class="font-semibold text-accent truncate max-w-[150px] md:max-w-xs font-mono">
+              {{ selected.name }}
+            </span>
+            <span class="text-muted/40">/</span>
+          </template>
           <span class="font-bold text-ink truncate">{{ pageTitle }}</span>
         </div>
       </div>

@@ -36,14 +36,32 @@ test("Converter gRPC Microservice Multi-Format Tests", async (t) => {
     }
   });
 
-  await t.test("Convert Markdown buffer to PDF buffer via gRPC", async () => {
+  await t.test("Convert HTML buffer to PDF buffer via gRPC", async () => {
     try {
-      const mdBuffer = Buffer.from("# Laporan PDF\n\nIsi laporan dari markdown.");
-      const result = await converterGrpcService.convertDocument(mdBuffer, "laporan.md", "md", "pdf");
+      const htmlBuffer = Buffer.from("<html><body><h1>Judul HTML</h1><p>Paragraf pengujian convert HTML ke PDF.</p></body></html>");
+      const result = await converterGrpcService.convertDocument(htmlBuffer, "halaman.html", "html", "pdf");
       assert.strictEqual(result.success, true);
-      assert.strictEqual(result.output_filename, "laporan.pdf");
+      assert.strictEqual(result.output_filename, "halaman.pdf");
       assert.ok(result.file_content.length > 0);
-      console.log(`[PASS] MD -> PDF Converted size: ${result.file_content.length} bytes, time: ${result.processing_time_ms}ms`);
+      console.log(`[PASS] HTML -> PDF Converted size: ${result.file_content.length} bytes, time: ${result.processing_time_ms}ms`);
+    } catch (err) {
+      console.log("Python gRPC server offline:", err.message);
+    }
+  });
+
+  await t.test("Convert PDF buffer to HTML buffer via gRPC", async () => {
+    try {
+      // Buat PDF dulu via html converter
+      const htmlBuffer = Buffer.from("<html><body><h1>Dokumen PDF</h1><p>Isi dokumen untuk konversi balik ke HTML.</p></body></html>");
+      const pdfRes = await converterGrpcService.convertDocument(htmlBuffer, "sumber.html", "html", "pdf");
+      
+      const result = await converterGrpcService.convertDocument(pdfRes.file_content, "sumber.pdf", "pdf", "html");
+      assert.strictEqual(result.success, true);
+      assert.strictEqual(result.output_filename, "sumber.html");
+      assert.ok(result.file_content.length > 0);
+      const htmlOut = Buffer.from(result.file_content).toString("utf-8");
+      assert.ok(htmlOut.includes("<!DOCTYPE html>"));
+      console.log(`[PASS] PDF -> HTML Converted size: ${result.file_content.length} bytes, time: ${result.processing_time_ms}ms`);
     } catch (err) {
       console.log("Python gRPC server offline:", err.message);
     }

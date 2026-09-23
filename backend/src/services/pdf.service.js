@@ -1,6 +1,28 @@
 import PDFDocument from "pdfkit";
 import fs from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+export const DEFAULT_DOCS_DIR = path.resolve(__dirname, "../../data/docs");
+
+export const getProjectDocsDir = (projectId) => {
+  const safeProjectId = String(projectId || "default").replace(/[^a-zA-Z0-9_\-]/g, "_");
+  const dir = path.join(DEFAULT_DOCS_DIR, safeProjectId);
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+};
+
+export const getProjectScreenshotsDir = (projectId) => {
+  const projectDocsDir = getProjectDocsDir(projectId);
+  const dir = path.join(projectDocsDir, "screenshots");
+  if (!fs.existsSync(dir)) {
+    fs.mkdirSync(dir, { recursive: true });
+  }
+  return dir;
+};
 
 /**
  * Clean inline markdown bold/italic/code markers for simple text rendering
@@ -425,15 +447,11 @@ export const createPdfFromMarkdown = ({ title, subtitle, markdown, projectName =
 };
 
 /**
- * Saves generated PDF buffer and optional markdown to a file in the project's docs/ directory.
+ * Saves generated PDF buffer and optional markdown to a file in the monitoring system's data/docs/<projectId>/ directory.
  * Returns file info object.
  */
-export const savePdfDocument = async (projectPath, filename, pdfBuffer, markdownContent = "") => {
-  const docsDir = path.join(projectPath, "docs");
-  if (!fs.existsSync(docsDir)) {
-    await fs.promises.mkdir(docsDir, { recursive: true });
-  }
-
+export const savePdfDocument = async (projectId, filename, pdfBuffer, markdownContent = "") => {
+  const docsDir = getProjectDocsDir(projectId);
   const filePath = path.join(docsDir, filename);
   await fs.promises.writeFile(filePath, pdfBuffer);
 
@@ -452,20 +470,18 @@ export const savePdfDocument = async (projectPath, filename, pdfBuffer, markdown
   return {
     filename,
     filePath,
-    relativePath: path.relative(projectPath, filePath),
+    relativePath: path.relative(DEFAULT_DOCS_DIR, filePath),
     sizeBytes: stat.size,
     createdAt: stat.birthtime ? stat.birthtime.toISOString() : new Date().toISOString(),
   };
 };
 
 /**
- * Lists all existing generated PDF documents in the project's docs/ directory.
+ * Lists all existing generated PDF documents in the monitoring data/docs/<projectId>/ directory.
  */
-export const listSavedPdfDocuments = async (projectPath) => {
-  const docsDir = path.join(projectPath, "docs");
-  if (!fs.existsSync(docsDir)) {
-    return [];
-  }
+export const listSavedPdfDocuments = async (projectId) => {
+  const docsDir = getProjectDocsDir(projectId);
+  const docList = [];
 
   try {
     const files = await fs.promises.readdir(docsDir, { withFileTypes: true });
@@ -473,7 +489,6 @@ export const listSavedPdfDocuments = async (projectPath) => {
       (dirent) => dirent.isFile() && dirent.name.toLowerCase().endsWith(".pdf"),
     );
 
-    const docList = [];
     for (const file of pdfFiles) {
       const filePath = path.join(docsDir, file.name);
       const stat = await fs.promises.stat(filePath);
@@ -500,14 +515,13 @@ export const listSavedPdfDocuments = async (projectPath) => {
             ? "User Guide (Panduan Pengguna)"
             : file.name.replace(/\.pdf$/i, ""),
         filename: file.name,
-        relativePath: path.relative(projectPath, filePath),
+        relativePath: path.relative(DEFAULT_DOCS_DIR, filePath),
         sizeBytes: stat.size,
         createdAt: (stat.birthtime || stat.mtime).toISOString(),
         markdown,
       });
     }
 
-    // Urutkan dari yang paling baru
     docList.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
     return docList;
   } catch {
@@ -516,16 +530,19 @@ export const listSavedPdfDocuments = async (projectPath) => {
 };
 
 /**
- * Deletes a generated PDF document and its optional markdown from project's docs/ directory.
+ * Deletes a generated PDF document and its optional markdown from monitoring data/docs/<projectId>/ directory.
  */
-export const deletePdfDocument = async (projectPath, filename) => {
+export const deletePdfDocument = async (projectId, filename) => {
   const cleanFilename = path.basename(filename);
-  const filePath = path.join(projectPath, "docs", cleanFilename);
+  const docsDir = getProjectDocsDir(projectId);
+  const filePath = path.join(docsDir, cleanFilename);
   if (fs.existsSync(filePath)) {
-    await fs.promises.unlink(filePath);
+    try {
+      await fs.promises.unlink(filePath);
+    } catch {}
   }
 
-  const mdPath = path.join(projectPath, "docs", cleanFilename.replace(/\.pdf$/i, ".md"));
+  const mdPath = path.join(docsDir, cleanFilename.replace(/\.pdf$/i, ".md"));
   if (fs.existsSync(mdPath)) {
     try {
       await fs.promises.unlink(mdPath);

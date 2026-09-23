@@ -7,6 +7,10 @@ from converters.md_converters import (
     convert_pdf_to_md_bytes,
     convert_docx_to_md_bytes,
 )
+from converters.html_converters import (
+    convert_html_to_pdf_bytes,
+    convert_pdf_to_html_bytes,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +22,8 @@ SUPPORTED_FORMATS = [
         "extension": ".pdf",
         "targets": [
             {"format": "docx", "label": "Microsoft Word (.docx)", "extension": ".docx", "description": "Konversi layout presisi ke DOCX"},
-            {"format": "md", "label": "Markdown Document (.md)", "extension": ".md", "description": "Ekstraksi teks, heading, dan tabel ke Markdown"}
+            {"format": "md", "label": "Markdown Document (.md)", "extension": ".md", "description": "Ekstraksi teks, heading, dan tabel ke Markdown"},
+            {"format": "html", "label": "HTML Webpage (.html)", "extension": ".html", "description": "Ekstraksi visual & teks ke dokumen web interaktif"}
         ]
     },
     {
@@ -37,6 +42,14 @@ SUPPORTED_FORMATS = [
         "targets": [
             {"format": "pdf", "label": "PDF Document (.pdf)", "extension": ".pdf", "description": "Render ke PDF dengan tipografi modern"},
             {"format": "docx", "label": "Microsoft Word (.docx)", "extension": ".docx", "description": "Ekspor ke dokumen DOCX berstruktur"}
+        ]
+    },
+    {
+        "format": "html",
+        "label": "HTML Document (.html)",
+        "extension": ".html",
+        "targets": [
+            {"format": "pdf", "label": "PDF Document (.pdf)", "extension": ".pdf", "description": "Render ke PDF siap cetak dengan tipografi modern"}
         ]
     }
 ]
@@ -63,6 +76,9 @@ def dispatch_conversion(file_bytes: bytes, filename: str, from_format: str, to_f
     if src == "pdf" and dst == "md":
         return convert_pdf_to_md_bytes(file_bytes, filename)
 
+    if src == "pdf" and dst == "html":
+        return convert_pdf_to_html_bytes(file_bytes, filename, options)
+
     # DOCX -> *
     if src == "docx" and dst == "pdf":
         return convert_docx_to_pdf_bytes(file_bytes, filename)
@@ -77,4 +93,9 @@ def dispatch_conversion(file_bytes: bytes, filename: str, from_format: str, to_f
     if src == "md" and dst == "docx":
         return convert_md_to_docx_bytes(file_bytes, filename)
 
+    # HTML -> *
+    if src == "html" and dst == "pdf":
+        return convert_html_to_pdf_bytes(file_bytes, filename, options)
+
     raise ValueError(f"Kombinasi konversi dari '{src}' ke '{dst}' belum didukung.")
+

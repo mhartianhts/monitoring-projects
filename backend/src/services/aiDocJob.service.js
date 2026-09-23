@@ -152,7 +152,7 @@ export const resumeDocJobWithScreenshots = async ({
 
       const techFilename = `${safeBranch}_Dokumentasi_Teknis.pdf`;
       const techFileInfo = await savePdfDocument(
-        project.path,
+        project.id,
         techFilename,
         techPdfBuffer,
         cleanTechMarkdown,
@@ -238,7 +238,7 @@ export const resumeDocJobWithScreenshots = async ({
 
       const userFilename = `${safeBranch}_User_Guide.pdf`;
       const userFileInfo = await savePdfDocument(
-        project.path,
+        project.id,
         userFilename,
         userPdfBuffer,
         cleanUserMarkdown,

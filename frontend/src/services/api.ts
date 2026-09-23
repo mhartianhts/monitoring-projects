@@ -9,6 +9,10 @@ import type {
   ManagedProjectsStore,
   Project,
 } from "../types/project";
+import type {
+  ChatSessionSummary,
+  ChatSessionDetail,
+} from "../types/chat.types";
 
 const parseJsonResponse = async <T>(res: Response): Promise<ApiResponse<T>> => {
   const text = await res.text();
@@ -147,6 +151,146 @@ export const api = {
     fetch("/api/ai/models").then((r) =>
       handle<import("../types/project").TokenPortalModelsResponse>(r),
     ),
+  aiChat: async (payload: {
+    message: string;
+    history?: Array<{ role: string; content: string }>;
+    model?: string;
+    systemPrompt?: string;
+    contextText?: string;
+  }) => {
+    const res = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(payload),
+    });
+    const body = await parseJsonResponse<{
+      reply: string;
+      stats?: {
+        model?: string;
+        promptTokens?: number | null;
+        completionTokens?: number | null;
+        totalTokens?: number | null;
+      };
+      hint?: string;
+    }>(res);
+    if (!res.ok || !body.success) {
+      const hint =
+        body.data && typeof body.data === "object" && "hint" in body.data
+          ? String((body.data as { hint?: string }).hint || "")
+          : "";
+      const base = body.error || `Request failed (${res.status})`;
+      throw new Error(hint ? `${base}\n${hint}` : base);
+    }
+    return body.data as {
+      reply: string;
+      stats?: {
+        model?: string;
+        promptTokens?: number | null;
+        completionTokens?: number | null;
+        totalTokens?: number | null;
+      };
+    };
+  },
+  aiChatStream: async (
+    payload: {
+      message: string;
+      sessionId?: string;
+      history?: Array<{ role: string; content: string }>;
+      model?: string;
+      systemPrompt?: string;
+      contextText?: string;
+    },
+    callbacks: {
+      onChunk: (delta: string) => void;
+      onDone?: (data: { reply: string; stats?: any; sessionId?: string }) => void;
+      onError?: (err: Error) => void;
+    },
+  ) => {
+    const res = await fetch("/api/ai/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify({ ...payload, stream: true }),
+    });
+
+    if (!res.ok) {
+      let errorMsg = `HTTP Error ${res.status}`;
+      try {
+        const errJson = await res.json();
+        errorMsg = errJson.error || errJson.message || errorMsg;
+      } catch {
+        const text = await res.text();
+        if (text) errorMsg = text;
+      }
+      throw new Error(errorMsg);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("ReadableStream tidak didukung browser ini");
+    }
+
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let fullReply = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const dataStr = trimmed.slice(5).trim();
+        if (!dataStr) continue;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (parsed.type === "chunk" && typeof parsed.delta === "string") {
+            fullReply += parsed.delta;
+            callbacks.onChunk(parsed.delta);
+          } else if (parsed.type === "done") {
+            if (callbacks.onDone) callbacks.onDone(parsed);
+          } else if (parsed.type === "error") {
+            const hint = parsed.hint ? ` (${parsed.hint})` : "";
+            const err = new Error((parsed.error || "Streaming error") + hint);
+            if (callbacks.onError) callbacks.onError(err);
+            else throw err;
+          }
+        } catch (e: any) {
+          if (e.message && !e.message.includes("JSON")) {
+            console.warn("SSE error:", e);
+          }
+        }
+      }
+    }
+
+    return { reply: fullReply };
+  },
+  listChatSessions: () =>
+    fetch("/api/ai/chat/sessions").then((r) => handle<ChatSessionSummary[]>(r)),
+  getChatSession: (id: string) =>
+    fetch(`/api/ai/chat/sessions/${id}`).then((r) =>
+      handle<ChatSessionDetail>(r),
+    ),
+  createChatSession: (data?: { title?: string; model?: string }) =>
+    postJson<ChatSessionDetail>("/api/ai/chat/sessions", data || {}),
+  updateChatSession: (id: string, data: { title: string }) =>
+    fetch(`/api/ai/chat/sessions/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(data),
+    }).then((r) => handle<ChatSessionDetail>(r)),
+  deleteChatSession: (id: string) =>
+    fetch(`/api/ai/chat/sessions/${id}`, { method: "DELETE" }).then((r) =>
+      handle<{ deleted: boolean }>(r),
+    ),
   aiCommitMessage: async (projectId: string, model?: string) => {
     const res = await fetch("/api/ai/commit-message", {
       method: "POST",
@@ -253,6 +397,11 @@ export const api = {
       `/api/ai/git-docs?projectId=${encodeURIComponent(projectId)}&filename=${encodeURIComponent(filename)}`,
       { method: "DELETE" },
     ).then((r) => handle<import("../types/project").GitGeneratedDoc[]>(r)),
+  aiOpenDocsFolder: (projectId: string) =>
+    postJson<{ path: string }>(
+      `/api/ai/git-docs/open-folder?projectId=${encodeURIComponent(projectId)}`,
+      {},
+    ),
   getGitDocDownloadUrl: (projectId: string, filename: string) =>
     `/api/ai/git-docs/download?projectId=${encodeURIComponent(projectId)}&filename=${encodeURIComponent(filename)}`,
 
@@ -530,4 +679,12 @@ export const api = {
     fetch("/api/webhook/inbox", { method: "DELETE" }).then((r) =>
       handle<{ deleted: number }>(r),
     ),
+  getTerminalSessions: () =>
+    fetch("/api/terminal/sessions").then((r) =>
+      handle<Array<{ id: string; pid: number; cwd: string; shell: string; projectId: string | null; createdAt: string }>>(r),
+    ),
+  killTerminalSession: (id: string) =>
+    fetch(`/api/terminal/sessions/${encodeURIComponent(id)}`, {
+      method: "DELETE",
+    }).then((r) => handle<{ killed: boolean; id: string }>(r)),
 };

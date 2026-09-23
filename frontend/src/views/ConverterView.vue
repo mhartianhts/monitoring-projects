@@ -37,6 +37,7 @@ const formatMatrix = ref<FormatSource[]>([
     targets: [
       { format: "docx", label: "Microsoft Word (.docx)", extension: ".docx", description: "Preservasi layout dan tabel akurat" },
       { format: "md", label: "Markdown Document (.md)", extension: ".md", description: "Ekstraksi struktur, heading, dan tabel" },
+      { format: "html", label: "HTML Webpage (.html)", extension: ".html", description: "Ekstraksi visual & teks ke dokumen web interaktif" },
     ],
   },
   {
@@ -55,6 +56,14 @@ const formatMatrix = ref<FormatSource[]>([
     targets: [
       { format: "pdf", label: "PDF Document (.pdf)", extension: ".pdf", description: "Render ke PDF dengan tipografi modern" },
       { format: "docx", label: "Microsoft Word (.docx)", extension: ".docx", description: "Konversi ke dokumen DOCX berstruktur" },
+    ],
+  },
+  {
+    format: "html",
+    label: "HTML Document",
+    extension: ".html",
+    targets: [
+      { format: "pdf", label: "PDF Document (.pdf)", extension: ".pdf", description: "Render ke PDF siap cetak dengan tipografi modern" },
     ],
   },
 ]);
@@ -182,6 +191,7 @@ const autoDetectAndSetFile = (file: File) => {
   if (name.endsWith(".pdf")) detectedFormat = "pdf";
   else if (name.endsWith(".docx")) detectedFormat = "docx";
   else if (name.endsWith(".md") || name.endsWith(".markdown")) detectedFormat = "md";
+  else if (name.endsWith(".html") || name.endsWith(".htm")) detectedFormat = "html";
 
   if (detectedFormat) {
     // If format differs from selected source, auto-switch source format
@@ -289,7 +299,7 @@ const handleConvert = async () => {
           </span>
         </div>
         <p class="text-xs text-muted mt-1">
-          Pusat konversi dokumen dinamis berpresisi tinggi dengan dukungan format <strong>PDF</strong>, <strong>DOCX (Word)</strong>, dan <strong>Markdown (.md)</strong>.
+          Pusat konversi dokumen dinamis berpresisi tinggi dengan dukungan format <strong>PDF</strong>, <strong>DOCX (Word)</strong>, <strong>Markdown (.md)</strong>, dan <strong>HTML (.html)</strong>.
         </p>
       </div>
 
@@ -335,7 +345,7 @@ const handleConvert = async () => {
           <label class="block text-xs font-bold text-ink flex items-center gap-1.5">
             <span>1. Format Asal (Source):</span>
           </label>
-          <div class="grid grid-cols-3 gap-2">
+          <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
             <button
               v-for="src in formatMatrix"
               :key="src.format"

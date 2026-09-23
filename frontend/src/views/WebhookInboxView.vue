@@ -51,7 +51,7 @@ const formatTime = (iso: string) => {
   }
 };
 
-const formatBytes = (bytes: number | null) => {
+const formatBytes = (bytes?: number | null) => {
   if (bytes == null || Number.isNaN(bytes)) return "-";
   if (bytes < 1024) return `${bytes} B`;
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
@@ -267,7 +267,7 @@ onUnmounted(() => {
         <button
           type="button"
           class="flex items-center gap-1.5 rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs font-medium text-ink hover:bg-line transition"
-          @click="loadInbox"
+          @click="() => loadInbox()"
         >
           <span>🔄</span>
           <span>Refresh</span>

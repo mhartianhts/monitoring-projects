@@ -9,6 +9,8 @@ import MobileShareView from "../views/MobileShareView.vue";
 import EnvManagerView from "../views/EnvManagerView.vue";
 import TelegramView from "../views/TelegramView.vue";
 import WebhookInboxView from "../views/WebhookInboxView.vue";
+import TerminalView from "../views/TerminalView.vue";
+import ChatbotView from "../views/ChatbotView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -41,6 +43,12 @@ export const router = createRouter({
           meta: { requiresProjectSidebar: true },
         },
         {
+          path: "terminal",
+          name: "terminal",
+          component: TerminalView,
+          meta: { requiresProjectSidebar: true },
+        },
+        {
           path: "telegram",
           name: "telegram",
           component: TelegramView,
@@ -50,6 +58,12 @@ export const router = createRouter({
           path: "webhook",
           name: "webhook",
           component: WebhookInboxView,
+          meta: { requiresProjectSidebar: true },
+        },
+        {
+          path: "chat",
+          name: "chat",
+          component: ChatbotView,
           meta: { requiresProjectSidebar: true },
         },
         {

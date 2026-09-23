@@ -1,6 +1,7 @@
 import { badRequest, fail, ok } from "../utils/response.js";
 import {
   chatWithTokenPortal,
+  streamChatWithTokenPortal,
   generateCommitMessageWithTokenPortal,
   getTokenPortalModels,
   getTokenPortalStatus,
@@ -13,6 +14,8 @@ import { getBranchDiffForDocs } from "../services/git.service.js";
 import {
   createPdfFromMarkdown,
   deletePdfDocument,
+  getProjectDocsDir,
+  getProjectScreenshotsDir,
   listSavedPdfDocuments,
   savePdfDocument,
 } from "../services/pdf.service.js";
@@ -22,6 +25,7 @@ import {
 } from "../services/aiMemory.service.js";
 import fs from "node:fs";
 import path from "node:path";
+import { exec } from "node:child_process";
 
 import {
   getActiveDocJobForProject,
@@ -29,6 +33,14 @@ import {
   resumeDocJobWithScreenshots,
   startDocJob,
 } from "../services/aiDocJob.service.js";
+import {
+  listChatSessions,
+  getChatSession,
+  createChatSession,
+  saveChatSession,
+  deleteChatSession,
+  appendMessageToSession,
+} from "../services/chatSession.service.js";
 
 export const createAiController = (processManager) => {
   const status = async (_req, res) => {
@@ -46,6 +58,163 @@ export const createAiController = (processManager) => {
       return ok(res, data);
     } catch (error) {
       return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const chat = async (req, res) => {
+    try {
+      const message = String(req.body?.message || "").trim();
+      const history = Array.isArray(req.body?.history) ? req.body.history : [];
+      const chosenModel = String(req.body?.model || "").trim();
+      const systemPrompt = req.body?.systemPrompt
+        ? String(req.body.systemPrompt).trim()
+        : undefined;
+      const contextText = req.body?.contextText
+        ? String(req.body.contextText).trim()
+        : "";
+      const isStream = Boolean(
+        req.body?.stream ??
+          (req.query?.stream === "true" ||
+            req.headers?.accept?.includes("text/event-stream")),
+      );
+
+      if (!message) {
+        return badRequest(res, "Pesan tidak boleh kosong");
+      }
+
+      let activeSessionId = String(req.body?.sessionId || "").trim();
+      if (!activeSessionId) {
+        const newSession = await createChatSession({
+          title: message.slice(0, 45).trim() || "Obrolan Baru",
+          model: chosenModel,
+        });
+        activeSessionId = newSession.id;
+      }
+
+      // Simpan pesan user ke session
+      await appendMessageToSession(activeSessionId, {
+        role: "user",
+        content: message,
+      });
+
+      if (isStream) {
+        res.setHeader("Content-Type", "text/event-stream");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("Connection", "keep-alive");
+        if (typeof res.flushHeaders === "function") {
+          res.flushHeaders();
+        }
+
+        try {
+          const result = await streamChatWithTokenPortal({
+            message,
+            history,
+            contextText,
+            systemPrompt,
+            model: chosenModel,
+            onChunk: (delta) => {
+              res.write(
+                `data: ${JSON.stringify({ type: "chunk", delta })}\n\n`,
+              );
+            },
+          });
+
+          // Simpan pesan assistant dan penggunaan token ke disk secara permanen
+          await appendMessageToSession(
+            activeSessionId,
+            { role: "assistant", content: result.reply, model: chosenModel },
+            result.stats,
+          );
+
+          res.write(
+            `data: ${JSON.stringify({
+              type: "done",
+              reply: result.reply,
+              stats: result.stats,
+              sessionId: activeSessionId,
+            })}\n\n`,
+          );
+          return res.end();
+        } catch (streamError) {
+          res.write(
+            `data: ${JSON.stringify({
+              type: "error",
+              error: streamError.message,
+              hint: streamError.hint || undefined,
+            })}\n\n`,
+          );
+          return res.end();
+        }
+      }
+
+      const data = await chatWithTokenPortal({
+        message,
+        history,
+        contextText,
+        systemPrompt,
+        model: chosenModel,
+      });
+
+      await appendMessageToSession(
+        activeSessionId,
+        { role: "assistant", content: data.reply, model: chosenModel },
+        data.stats,
+      );
+
+      return ok(res, { ...data, sessionId: activeSessionId });
+    } catch (error) {
+      return fail(res, error.message, error.status || 500, {
+        hint: error.hint || undefined,
+      });
+    }
+  };
+
+  const listSessions = async (_req, res) => {
+    try {
+      const data = await listChatSessions();
+      return ok(res, data);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const getSession = async (req, res) => {
+    try {
+      const session = await getChatSession(req.params.sessionId);
+      if (!session) return fail(res, "Session chat tidak ditemukan", 404);
+      return ok(res, session);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const createSession = async (req, res) => {
+    try {
+      const session = await createChatSession(req.body || {});
+      return ok(res, session);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const updateSession = async (req, res) => {
+    try {
+      const session = await getChatSession(req.params.sessionId);
+      if (!session) return fail(res, "Session chat tidak ditemukan", 404);
+      if (req.body?.title) session.title = String(req.body.title).trim();
+      const saved = await saveChatSession(session);
+      return ok(res, saved);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const deleteSession = async (req, res) => {
+    try {
+      const deleted = await deleteChatSession(req.params.sessionId);
+      return ok(res, { deleted });
+    } catch (error) {
+      return fail(res, error.message, 500);
     }
   };
 
@@ -140,9 +309,15 @@ export const createAiController = (processManager) => {
         return badRequest(res, "Filename PDF tidak valid");
       }
 
-      const filePath = path.join(project.path, "docs", filename);
+      const projectDocsDir = getProjectDocsDir(project.id);
+      let filePath = path.join(projectDocsDir, filename);
       if (!fs.existsSync(filePath)) {
-        return fail(res, "File PDF tidak ditemukan", 404);
+        const legacyPath = path.join(project.path, "docs", filename);
+        if (fs.existsSync(legacyPath)) {
+          filePath = legacyPath;
+        } else {
+          return fail(res, "File PDF tidak ditemukan", 404);
+        }
       }
 
       res.setHeader("Content-Type", "application/pdf");
@@ -170,11 +345,8 @@ export const createAiController = (processManager) => {
         slotsMeta = [];
       }
 
-      // Pastikan folder temp untuk screenshot ada
-      const tempDir = path.join(project.path, "docs", ".tmp_screenshots");
-      if (!fs.existsSync(tempDir)) {
-        await fs.promises.mkdir(tempDir, { recursive: true });
-      }
+      // Pastikan folder screenshots di dalam data/docs/<projectId>/screenshots ada
+      const screenshotsDir = getProjectScreenshotsDir(project.id);
 
       // Map uploaded files to slots
       const uploadedScreenshots = [];
@@ -185,7 +357,7 @@ export const createAiController = (processManager) => {
         
         const ext = path.extname(file.originalname) || ".png";
         const cleanName = `${jobId}_${slotId}_${Date.now()}${ext}`;
-        const targetPath = path.join(tempDir, cleanName);
+        const targetPath = path.join(screenshotsDir, cleanName);
 
         // Jika multer menggunakan memoryStorage, tulis buffer ke file
         if (file.buffer) {
@@ -238,7 +410,7 @@ export const createAiController = (processManager) => {
   const listGitDocs = async (req, res) => {
     try {
       const project = requireProjectOrThrow(req.query?.projectId);
-      const docs = await listSavedPdfDocuments(project.path);
+      const docs = await listSavedPdfDocuments(project.id);
       return ok(res, docs);
     } catch (error) {
       return fail(res, error.message, error.status || 500);
@@ -253,9 +425,31 @@ export const createAiController = (processManager) => {
         return badRequest(res, "Filename PDF tidak valid");
       }
 
-      await deletePdfDocument(project.path, filename);
-      const docs = await listSavedPdfDocuments(project.path);
+      await deletePdfDocument(project.id, filename);
+      const docs = await listSavedPdfDocuments(project.id);
       return ok(res, docs);
+    } catch (error) {
+      return fail(res, error.message, error.status || 500);
+    }
+  };
+
+  const openDocsFolder = async (req, res) => {
+    try {
+      const project = requireProjectOrThrow(req.query?.projectId || req.body?.projectId);
+      const projectDocsDir = getProjectDocsDir(project.id);
+      if (!fs.existsSync(projectDocsDir)) {
+        await fs.promises.mkdir(projectDocsDir, { recursive: true });
+      }
+
+      if (process.platform === "win32") {
+        exec(`explorer "${projectDocsDir}"`);
+      } else if (process.platform === "darwin") {
+        exec(`open "${projectDocsDir}"`);
+      } else {
+        exec(`xdg-open "${projectDocsDir}"`);
+      }
+
+      return ok(res, { path: projectDocsDir });
     } catch (error) {
       return fail(res, error.message, error.status || 500);
     }
@@ -285,6 +479,12 @@ export const createAiController = (processManager) => {
   return {
     status,
     models,
+    chat,
+    listSessions,
+    getSession,
+    createSession,
+    updateSession,
+    deleteSession,
     commitMessage,
     generateGitDocs,
     getDocJobStatus,
@@ -293,6 +493,7 @@ export const createAiController = (processManager) => {
     listGitDocs,
     downloadGitDoc,
     deleteGitDoc,
+    openDocsFolder,
     getMemory,
     updateMemory,
   };

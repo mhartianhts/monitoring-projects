@@ -19,9 +19,11 @@ export const createConverterRouter = () => {
   // Generic Converter (From -> To)
   router.post("/convert", upload.single("file"), converterController.convert);
 
-  // Legacy/Shortcut endpoints
+  // Shortcut endpoints
   router.post("/pdf-to-docx", upload.single("file"), converterController.convertPdfToDocx);
   router.post("/docx-to-pdf", upload.single("file"), converterController.convertDocxToPdf);
+  router.post("/html-to-pdf", upload.single("file"), converterController.convertHtmlToPdf);
+  router.post("/pdf-to-html", upload.single("file"), converterController.convertPdfToHtml);
 
   return router;
 };

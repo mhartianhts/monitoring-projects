@@ -10,9 +10,31 @@ import type {
   Project,
 } from "../types/project";
 
+const STORAGE_KEY_SELECTED_PROJECT = "monitoring_selected_project_id";
+
+const getSavedProjectId = (): string | null => {
+  try {
+    return localStorage.getItem(STORAGE_KEY_SELECTED_PROJECT);
+  } catch {
+    return null;
+  }
+};
+
+const saveProjectId = (id: string | null) => {
+  try {
+    if (id) {
+      localStorage.setItem(STORAGE_KEY_SELECTED_PROJECT, id);
+    } else {
+      localStorage.removeItem(STORAGE_KEY_SELECTED_PROJECT);
+    }
+  } catch {
+    // Ignore localStorage errors
+  }
+};
+
 export const useProjectStore = defineStore("project", () => {
   const projects = ref<Project[]>([]);
-  const selectedId = ref<string | null>(null);
+  const selectedId = ref<string | null>(getSavedProjectId());
   const search = ref("");
   const loading = ref(false);
   const actionLoading = ref(false);
@@ -145,8 +167,14 @@ export const useProjectStore = defineStore("project", () => {
     error.value = null;
     try {
       projects.value = await api.listProjects();
-      if (!selectedId.value && projects.value.length > 0) {
-        await selectProject(projects.value[0].id);
+      if (projects.value.length > 0) {
+        const preferredId = selectedId.value || getSavedProjectId();
+        const matched = projects.value.find((p) => p.id === preferredId);
+        const targetId = matched ? matched.id : projects.value[0].id;
+        await selectProject(targetId);
+      } else {
+        selectedId.value = null;
+        saveProjectId(null);
       }
     } catch (err) {
       error.value =
@@ -166,6 +194,7 @@ export const useProjectStore = defineStore("project", () => {
 
   const selectProject = async (id: string) => {
     selectedId.value = id;
+    saveProjectId(id);
     logs.value = [];
     gitMessage.value = null;
     gitStatus.value = null;

@@ -6,6 +6,7 @@ const MIME_MAP = {
   docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   md: "text/markdown; charset=utf-8",
   txt: "text/plain; charset=utf-8",
+  html: "text/html; charset=utf-8",
 };
 
 /**
@@ -48,6 +49,7 @@ export const converterController = {
           targets: [
             { format: "docx", label: "Microsoft Word (.docx)", extension: ".docx", description: "Konversi layout presisi ke DOCX" },
             { format: "md", label: "Markdown Document (.md)", extension: ".md", description: "Ekstraksi teks dan tabel ke Markdown" },
+            { format: "html", label: "HTML Webpage (.html)", extension: ".html", description: "Ekstraksi visual & teks ke dokumen web interaktif" },
           ],
         },
         {
@@ -66,6 +68,14 @@ export const converterController = {
           targets: [
             { format: "pdf", label: "PDF Document (.pdf)", extension: ".pdf", description: "Render ke PDF dengan tipografi modern" },
             { format: "docx", label: "Microsoft Word (.docx)", extension: ".docx", description: "Ekspor ke dokumen DOCX berstruktur" },
+          ],
+        },
+        {
+          format: "html",
+          label: "HTML Document (.html)",
+          extension: ".html",
+          targets: [
+            { format: "pdf", label: "PDF Document (.pdf)", extension: ".pdf", description: "Render ke PDF siap cetak dengan tipografi modern" },
           ],
         },
       ]);
@@ -129,6 +139,24 @@ export const converterController = {
   async convertDocxToPdf(req, res) {
     req.body.fromFormat = "docx";
     req.body.toFormat = "pdf";
+    return converterController.convert(req, res);
+  },
+
+  /**
+   * Endpoint Konversi HTML ke PDF (Quick route)
+   */
+  async convertHtmlToPdf(req, res) {
+    req.body.fromFormat = "html";
+    req.body.toFormat = "pdf";
+    return converterController.convert(req, res);
+  },
+
+  /**
+   * Endpoint Konversi PDF ke HTML (Quick route)
+   */
+  async convertPdfToHtml(req, res) {
+    req.body.fromFormat = "pdf";
+    req.body.toFormat = "html";
     return converterController.convert(req, res);
   },
 };

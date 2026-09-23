@@ -300,6 +300,17 @@ const downloadDoc = (doc: GitGeneratedDoc) => {
   window.open(url, "_blank");
 };
 
+const openDocsFolder = async () => {
+  if (!selectedId.value) return;
+  try {
+    const res = await api.aiOpenDocsFolder(selectedId.value);
+    notify.toast(`Membuka folder docs: ${res.path}`, "info");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Gagal membuka folder dokumen";
+    notify.error("Gagal Buka Folder", msg);
+  }
+};
+
 const copyDocMarkdown = async (markdownText?: string) => {
   if (!markdownText) {
     notify.toast("Isi dokumen tidak tersedia untuk disalin", "info");
@@ -403,8 +414,17 @@ onUnmounted(() => {
               :disabled="gitLoading || loadingSavedDocs"
               @click="store.fetchGitStatus(); loadSavedDocs()"
             />
+            <button
+              type="button"
+              class="flex items-center gap-1.5 rounded-lg border border-accent/40 bg-accent/10 px-3 py-1.5 text-xs font-semibold text-accent hover:bg-accent/20 transition shadow-2xs"
+              title="Buka folder penyimpanan dokumen & visual di monitoring/backend/data/docs"
+              @click="openDocsFolder"
+            >
+              <span>📁</span>
+              <span>Buka Storage Docs</span>
+            </button>
             <IconButton
-              label="Open Folder"
+              label="Buka Folder Projek"
               variant="ghost"
               @click="store.openFolder()"
             />
@@ -623,7 +643,10 @@ onUnmounted(() => {
             <div class="flex items-center justify-between mb-4 border-b border-line pb-3">
               <div class="flex items-center gap-2">
                 <span class="text-base">📑</span>
-                <h4 class="text-sm font-bold text-ink">Galeri Dokumen PDF Proyek (Tersimpan di docs/)</h4>
+                <div>
+                  <h4 class="text-sm font-bold text-ink">Galeri Dokumen PDF Sentral</h4>
+                  <p class="text-[10px] font-mono text-accent">Tersimpan di: backend/data/docs/{{ selected.id }}</p>
+                </div>
               </div>
               <div class="flex items-center gap-2">
                 <span v-if="loadingSavedDocs" class="text-xs text-muted animate-pulse">Memuat berkas...</span>

@@ -151,6 +151,14 @@ const canStop = () => props.project.status === "running" && !props.busy;
             :disabled="!project.port"
             @click="emit('openBrowser')"
           />
+          <RouterLink
+            :to="{ name: 'terminal', query: { project: project.id } }"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-line bg-elevated px-3 py-1.5 text-xs font-semibold text-ink hover:bg-line hover:border-accent/40 hover:text-accent transition shadow-xs"
+            title="Buka Interactive Web Terminal di folder project ini"
+          >
+            <span>💻</span>
+            <span>Terminal</span>
+          </RouterLink>
         </div>
 
         <!-- Available IDE Editors -->

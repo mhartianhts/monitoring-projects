@@ -15,6 +15,12 @@ export const createAiRouter = (processManager) => {
 
   router.get("/status", controller.status);
   router.get("/models", controller.models);
+  router.post("/chat", controller.chat);
+  router.get("/chat/sessions", controller.listSessions);
+  router.post("/chat/sessions", controller.createSession);
+  router.get("/chat/sessions/:sessionId", controller.getSession);
+  router.put("/chat/sessions/:sessionId", controller.updateSession);
+  router.delete("/chat/sessions/:sessionId", controller.deleteSession);
   router.post("/commit-message", controller.commitMessage);
   router.get("/memory/:projectId", controller.getMemory);
   router.put("/memory/:projectId", controller.updateMemory);
@@ -25,6 +31,7 @@ export const createAiRouter = (processManager) => {
   router.get("/git-docs/active", controller.getDocJobStatus);
   router.get("/git-docs/list", controller.listGitDocs);
   router.get("/git-docs/download", controller.downloadGitDoc);
+  router.post("/git-docs/open-folder", controller.openDocsFolder);
   router.delete("/git-docs", controller.deleteGitDoc);
 
   return router;

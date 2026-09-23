@@ -210,14 +210,16 @@ const toggleCollapse = () => {
     </div>
 
     <!-- Main Navigation Menu Links (Middle Section) -->
-    <div class="flex-1 overflow-y-auto p-2 space-y-1.5">
-      <div v-if="!isCollapsed" class="px-2 pt-1 pb-1">
-        <span class="text-[10px] font-bold uppercase tracking-[0.18em] text-muted">Feature Navigation</span>
+    <div class="flex-1 overflow-y-auto p-2 space-y-1">
+      <!-- Section 1: Fitur Berhubungan dengan Projek -->
+      <div v-if="!isCollapsed" class="px-2.5 pt-1.5 pb-1 flex items-center justify-between">
+        <span class="text-[9px] font-bold uppercase tracking-[0.16em] text-accent">Fitur Projek</span>
+        <span class="text-[9px] font-mono text-muted/60">Scoped</span>
       </div>
 
       <RouterLink
         :to="{ name: 'dashboard' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'dashboard'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
@@ -230,8 +232,22 @@ const toggleCollapse = () => {
       </RouterLink>
 
       <RouterLink
+        :to="{ name: 'terminal' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
+        :class="
+          route.name === 'terminal'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'Interactive Web Terminal (PowerShell / PTY)' : undefined"
+      >
+        <span class="text-base shrink-0">💻</span>
+        <span v-if="!isCollapsed" class="truncate">Web Terminal</span>
+      </RouterLink>
+
+      <RouterLink
         :to="{ name: 'git' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'git'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
@@ -245,7 +261,7 @@ const toggleCollapse = () => {
 
       <RouterLink
         :to="{ name: 'env' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'env'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
@@ -258,22 +274,45 @@ const toggleCollapse = () => {
       </RouterLink>
 
       <RouterLink
-        :to="{ name: 'telegram' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        :to="{ name: 'docs' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
-          route.name === 'telegram'
+          route.name === 'docs'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
             : 'text-muted hover:bg-elevated hover:text-ink'
         "
-        :title="isCollapsed ? 'Telegram Bot & Commands' : undefined"
+        :title="isCollapsed ? 'AI Documentation' : undefined"
       >
-        <span class="text-base shrink-0">🤖</span>
-        <span v-if="!isCollapsed" class="truncate">Telegram Bot</span>
+        <span class="text-base shrink-0">📄</span>
+        <span v-if="!isCollapsed" class="truncate">AI Documentation</span>
+      </RouterLink>
+
+      <!-- Divider Pemisah Antar Section -->
+      <div class="my-2.5 border-t border-line/70"></div>
+
+      <!-- Section 2: Fitur Bebas / Alat Independen -->
+      <div v-if="!isCollapsed" class="px-2.5 pt-1 pb-1 flex items-center justify-between">
+        <span class="text-[9px] font-bold uppercase tracking-[0.16em] text-muted">Alat Independen</span>
+        <span class="text-[9px] font-mono text-muted/60">Global</span>
+      </div>
+
+      <RouterLink
+        :to="{ name: 'chat' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
+        :class="
+          route.name === 'chat'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'AI Chatbot (Markdown)' : undefined"
+      >
+        <span class="text-base shrink-0">✨</span>
+        <span v-if="!isCollapsed" class="truncate">AI Chatbot</span>
       </RouterLink>
 
       <RouterLink
         :to="{ name: 'webhook' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'webhook'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
@@ -286,24 +325,22 @@ const toggleCollapse = () => {
       </RouterLink>
 
       <RouterLink
-        :to="{ name: 'docs' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        :to="{ name: 'telegram' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
-          route.name === 'docs'
+          route.name === 'telegram'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
             : 'text-muted hover:bg-elevated hover:text-ink'
         "
-        :title="isCollapsed ? 'AI Documentation' : undefined"
+        :title="isCollapsed ? 'Telegram Bot & Commands' : undefined"
       >
-        <span class="text-base shrink-0">📄</span>
-        <span v-if="!isCollapsed" class="truncate">AI Documentation</span>
+        <span class="text-base shrink-0">🤖</span>
+        <span v-if="!isCollapsed" class="truncate">Telegram Bot</span>
       </RouterLink>
-
-
 
       <RouterLink
         :to="{ name: 'converter' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'converter'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
@@ -317,7 +354,7 @@ const toggleCollapse = () => {
 
       <RouterLink
         :to="{ name: 'share' }"
-        class="flex items-center gap-3 rounded-lg px-3 py-2.5 text-xs font-semibold transition"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
           route.name === 'share'
             ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
