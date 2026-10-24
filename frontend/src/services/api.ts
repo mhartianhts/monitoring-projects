@@ -13,6 +13,11 @@ import type {
   ChatSessionSummary,
   ChatSessionDetail,
 } from "../types/chat.types";
+import type {
+  ClaudeStatusInfo,
+  ClaudeSessionSummary,
+  ClaudeSessionDetail,
+} from "../types/claude.types";
 
 const parseJsonResponse = async <T>(res: Response): Promise<ApiResponse<T>> => {
   const text = await res.text();
@@ -647,24 +652,67 @@ export const api = {
     fetch("/api/webhook/info").then((r) =>
       handle<import("../types/webhook.types").IWebhookInfo>(r),
     ),
+  getWebhookConfig: () =>
+    fetch("/api/webhook/config").then((r) =>
+      handle<{
+        config: import("../types/webhook.types").IWebhookConfig;
+        models: import("../types/project").TokenPortalModel[];
+      }>(r),
+    ),
+  updateWebhookConfig: (
+    config: Partial<import("../types/webhook.types").IWebhookConfig>,
+  ) =>
+    fetch("/api/webhook/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(config),
+    }).then((r) =>
+      handle<import("../types/webhook.types").IWebhookConfig>(r),
+    ),
   getWebhookInbox: (
     params: {
       page?: number;
       limit?: number;
       kind?: string;
       search?: string;
+      chatType?: string;
     } = {},
   ) => {
     const query = new URLSearchParams();
     if (params.page) query.set("page", String(params.page));
     if (params.limit) query.set("limit", String(params.limit));
     if (params.kind && params.kind !== "all") query.set("kind", params.kind);
+    if (params.chatType && params.chatType !== "all") query.set("chatType", params.chatType);
     if (params.search) query.set("search", params.search);
     const suffix = query.toString() ? `?${query.toString()}` : "";
     return fetch(`/api/webhook/inbox${suffix}`).then((r) =>
       handle<import("../types/webhook.types").IWebhookInboxList>(r),
     );
   },
+  getWebhookInboxThreads: (
+    params: {
+      kind?: string;
+      search?: string;
+      chatType?: string;
+    } = {},
+  ) => {
+    const query = new URLSearchParams();
+    if (params.kind && params.kind !== "all") query.set("kind", params.kind);
+    if (params.chatType && params.chatType !== "all") query.set("chatType", params.chatType);
+    if (params.search) query.set("search", params.search);
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return fetch(`/api/webhook/inbox/threads${suffix}`).then((r) =>
+      handle<import("../types/webhook.types").IWebhookThreadList>(r),
+    );
+  },
+  getWebhookInboxThread: (threadIdOrSender: string) =>
+    fetch(
+      `/api/webhook/inbox/threads/${encodeURIComponent(threadIdOrSender)}`,
+    ).then((r) => handle<import("../types/webhook.types").IWebhookThread>(r)),
+  deleteWebhookInboxThread: (threadIdOrSender: string) =>
+    fetch(`/api/webhook/inbox/threads/${encodeURIComponent(threadIdOrSender)}`, {
+      method: "DELETE",
+    }).then((r) => handle<{ deleted: number; senderNumber: string }>(r)),
   getWebhookInboxItem: (id: string) =>
     fetch(`/api/webhook/inbox/${encodeURIComponent(id)}`).then((r) =>
       handle<import("../types/webhook.types").IWebhookInboxItem>(r),
@@ -679,6 +727,30 @@ export const api = {
     fetch("/api/webhook/inbox", { method: "DELETE" }).then((r) =>
       handle<{ deleted: number }>(r),
     ),
+  sendWebhookMessage: (payload: {
+    message: string;
+    senderNumber?: string;
+    whatsappNumber?: string;
+    deviceId?: string;
+    chatType?: string;
+    groupId?: string | null;
+    groupName?: string | null;
+  }) =>
+    fetch("/api/webhook/chatbot", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        device_id: payload.deviceId || "device-web-dashboard",
+        whatsapp_number: payload.whatsappNumber || "628111111111",
+        sender_number: payload.senderNumber || "628222222222",
+        message: payload.message,
+        message_type: "conversation",
+        chat_type: payload.chatType || (payload.groupId ? "group" : "direct"),
+        group_id: payload.groupId || null,
+        group_name: payload.groupName || null,
+        timestamp: new Date().toISOString(),
+      }),
+    }).then((r) => r.json()),
   getTerminalSessions: () =>
     fetch("/api/terminal/sessions").then((r) =>
       handle<Array<{ id: string; pid: number; cwd: string; shell: string; projectId: string | null; createdAt: string }>>(r),
@@ -687,4 +759,108 @@ export const api = {
     fetch(`/api/terminal/sessions/${encodeURIComponent(id)}`, {
       method: "DELETE",
     }).then((r) => handle<{ killed: boolean; id: string }>(r)),
+
+  // Claude Code Local CLI API
+  getClaudeStatus: () =>
+    fetch("/api/claude/status").then((r) => handle<ClaudeStatusInfo>(r)),
+  listClaudeSessions: () =>
+    fetch("/api/claude/sessions").then((r) => handle<ClaudeSessionSummary[]>(r)),
+  getClaudeSession: (id: string) =>
+    fetch(`/api/claude/sessions/${id}`).then((r) => handle<ClaudeSessionDetail>(r)),
+  createClaudeSession: (data?: {
+    title?: string;
+    model?: string;
+    projectId?: string | null;
+    mode?: string;
+  }) => postJson<ClaudeSessionDetail>("/api/claude/sessions", data || {}),
+  deleteClaudeSession: (id: string) =>
+    fetch(`/api/claude/sessions/${id}`, { method: "DELETE" }).then((r) =>
+      handle<{ deleted: boolean; sessionId: string }>(r),
+    ),
+  stopClaudeChat: (sessionId: string) =>
+    postJson<{ stopped: boolean; sessionId: string }>("/api/claude/stop", {
+      sessionId,
+    }),
+  claudeChatStream: async (
+    payload: {
+      message: string;
+      sessionId?: string;
+      model?: string;
+      projectId?: string | null;
+      mode?: "safe" | "agent";
+      systemPrompt?: string;
+    },
+    callbacks: {
+      onChunk: (delta: string) => void;
+      onDone?: (data: { reply: string; stats?: any; sessionId?: string }) => void;
+      onError?: (err: Error) => void;
+    },
+  ) => {
+    const res = await fetch("/api/claude/chat", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Accept: "text/event-stream",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!res.ok) {
+      let errorMsg = `HTTP Error ${res.status}`;
+      try {
+        const errJson = await res.json();
+        errorMsg = errJson.error || errJson.message || errorMsg;
+      } catch {
+        const text = await res.text();
+        if (text) errorMsg = text;
+      }
+      throw new Error(errorMsg);
+    }
+
+    const reader = res.body?.getReader();
+    if (!reader) {
+      throw new Error("ReadableStream tidak didukung browser ini");
+    }
+
+    const decoder = new TextDecoder("utf-8");
+    let buffer = "";
+    let fullReply = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+
+      for (const line of lines) {
+        const trimmed = line.trim();
+        if (!trimmed || !trimmed.startsWith("data:")) continue;
+        const dataStr = trimmed.slice(5).trim();
+        if (!dataStr) continue;
+
+        try {
+          const parsed = JSON.parse(dataStr);
+          if (parsed.type === "chunk" && typeof parsed.delta === "string") {
+            fullReply += parsed.delta;
+            callbacks.onChunk(parsed.delta);
+          } else if (parsed.type === "done") {
+            if (callbacks.onDone) callbacks.onDone(parsed);
+          } else if (parsed.type === "error") {
+            const hint = parsed.hint ? ` (${parsed.hint})` : "";
+            const err = new Error((parsed.error || "Streaming error") + hint);
+            if (callbacks.onError) callbacks.onError(err);
+            else throw err;
+          }
+        } catch (e: any) {
+          if (e.message && !e.message.includes("JSON")) {
+            console.warn("SSE error:", e);
+          }
+        }
+      }
+    }
+
+    return { reply: fullReply };
+  },
 };

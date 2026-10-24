@@ -1,6 +1,10 @@
 import { ok, fail } from "../utils/response.js";
 import { appConfig } from "../config/app.js";
 import { webhookInbox } from "../services/webhookInbox.service.js";
+import {
+  TOKENPORTAL_KNOWN_MODELS,
+  getTokenPortalModels,
+} from "../services/tokenportal.service.js";
 
 const SKIP_REPLY = { skip_reply: true };
 
@@ -32,8 +36,16 @@ export const createWebhookController = (io) => {
           timestamp: Date.now(),
         });
       }
+
+      if (record?.botReply?.payload) {
+        return res.status(200).json(record.botReply.payload);
+      }
+
+      if (record?.botReply?.text) {
+        return res.status(200).json({ reply: record.botReply.text });
+      }
     } catch (error) {
-      console.error("[webhook] Gagal menyimpan inbox:", error);
+      console.error("[webhook] Gagal memproses webhook:", error);
     }
 
     return res.status(200).json(SKIP_REPLY);
@@ -47,6 +59,79 @@ export const createWebhookController = (io) => {
     }
   };
 
+  const getConfig = async (_req, res) => {
+    try {
+      const config = webhookInbox.getConfig();
+      let models = TOKENPORTAL_KNOWN_MODELS;
+      try {
+        const data = await getTokenPortalModels();
+        if (data?.models?.length) {
+          models = data.models;
+        }
+      } catch {
+        // Gunakan default list
+      }
+      return ok(res, { config, models });
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const updateConfig = (req, res) => {
+    try {
+      const updated = webhookInbox.updateConfig(req.body || {});
+      if (io) {
+        io.emit("webhook:config", updated);
+      }
+      return ok(res, updated);
+    } catch (error) {
+      return fail(res, error.message, 400);
+    }
+  };
+
+  const listThreads = (req, res) => {
+    try {
+      const result = webhookInbox.listThreads({
+        kind: req.query.kind,
+        search: req.query.search,
+        chatType: req.query.chatType || req.query.chat_type,
+      });
+      return ok(res, result);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const getThread = (req, res) => {
+    try {
+      const result = webhookInbox.getThread(req.params.senderNumber);
+      if (!result) return fail(res, "Percakapan tidak ditemukan", 404);
+      return ok(res, result);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
+  const deleteThread = (req, res) => {
+    try {
+      const result = webhookInbox.deleteThread(req.params.senderNumber);
+      if (!result.deleted) return fail(res, "Percakapan tidak ditemukan", 404);
+      if (io) {
+        io.emit("webhook:inbox", {
+          type: "thread_deleted",
+          data: {
+            threadId: req.params.senderNumber,
+            senderNumber: req.params.senderNumber,
+          },
+          timestamp: Date.now(),
+        });
+      }
+      return ok(res, result);
+    } catch (error) {
+      return fail(res, error.message, 500);
+    }
+  };
+
   const listInbox = (req, res) => {
     try {
       const result = webhookInbox.list({
@@ -54,6 +139,7 @@ export const createWebhookController = (io) => {
         limit: req.query.limit,
         kind: req.query.kind,
         search: req.query.search,
+        chatType: req.query.chatType || req.query.chat_type,
       });
       return ok(res, result);
     } catch (error) {
@@ -129,7 +215,12 @@ export const createWebhookController = (io) => {
   return {
     ingest,
     info,
+    getConfig,
+    updateConfig,
     listInbox,
+    listThreads,
+    getThread,
+    deleteThread,
     getInboxItem,
     downloadMedia,
     deleteInboxItem,

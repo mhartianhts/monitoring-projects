@@ -22,11 +22,13 @@ const pageTitle = computed(() => {
   if (route.name === 'terminal') return 'Interactive Web Terminal';
   if (route.name === 'telegram') return 'Telegram Bot & Commands';
   if (route.name === 'webhook') return 'Chatbot Inbox';
+  if (route.name === 'webhook-config') return 'Webhook & AI Settings';
   if (route.name === 'docs') return 'AI Documentation Suite';
   if (route.name === 'converter') return 'Document Converter (gRPC)';
   if (route.name === 'share') return 'Instant Local Share';
   if (route.name === 'agent') return 'AI Agent Workspace';
   if (route.name === 'chat' || route.name === 'ai') return 'AI Chatbot';
+  if (route.name === 'claude-chat') return 'Claude Code Assistant';
   return 'Workspace';
 });
 

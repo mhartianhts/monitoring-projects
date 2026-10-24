@@ -7,6 +7,11 @@ export const createWebhookRouter = (io) => {
 
   router.post("/chatbot", controller.ingest);
   router.get("/info", controller.info);
+  router.get("/config", controller.getConfig);
+  router.put("/config", controller.updateConfig);
+  router.get("/inbox/threads", controller.listThreads);
+  router.get("/inbox/threads/:senderNumber", controller.getThread);
+  router.delete("/inbox/threads/:senderNumber", controller.deleteThread);
   router.get("/inbox", controller.listInbox);
   router.delete("/inbox", controller.clearInbox);
   router.get("/inbox/:id", controller.getInboxItem);

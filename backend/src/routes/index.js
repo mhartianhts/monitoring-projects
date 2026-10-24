@@ -6,6 +6,7 @@ import { createShareRouter } from "./share.routes.js";
 import { createTelegramRouter } from "./telegram.routes.js";
 import { createWebhookRouter } from "./webhook.routes.js";
 import { createTerminalRouter } from "./terminal.routes.js";
+import { createClaudeRouter } from "./claude.routes.js";
 import { ok } from "../utils/response.js";
 import { appConfig } from "../config/app.js";
 
@@ -39,5 +40,6 @@ export const createApiRouter = (processManager, io, telegramService, terminalSer
   if (terminalService) {
     router.use("/terminal", createTerminalRouter(terminalService));
   }
+  router.use("/claude", createClaudeRouter(processManager));
   return router;
 };

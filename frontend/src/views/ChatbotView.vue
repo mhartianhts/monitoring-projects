@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, onMounted, nextTick } from "vue";
+import { ref, computed, onMounted, onBeforeUnmount, nextTick } from "vue";
 import { api } from "../services/api";
 import { notify } from "../services/notification.service";
 import MarkdownRenderer from "../components/ui/MarkdownRenderer.vue";
@@ -10,10 +10,53 @@ import type {
   ChatSessionDetail,
 } from "../types/chat.types";
 
+export type TypingSpeedMode = "relaxed" | "natural" | "fast" | "instant";
+
 const MODEL_KEY = "tokenportal_ai_model";
 const FULLWIDTH_KEY = "ai_chatbot_fullwidth";
 const ACTIVE_SESSION_KEY = "ai_chatbot_active_session_id";
 const SHOW_DRAWER_KEY = "ai_chatbot_show_history";
+const TYPING_SPEED_KEY = "ai_chatbot_typing_speed";
+
+const TYPING_CONFIGS: Record<
+  TypingSpeedMode,
+  { label: string; icon: string; tickMs: number; desc: string }
+> = {
+  natural: {
+    label: "Alami (GPT/Gemini)",
+    icon: "✍️",
+    tickMs: 22,
+    desc: "Mengetik halus mirip ChatGPT & Gemini dengan ritme kata yang nyaman",
+  },
+  relaxed: {
+    label: "Santai",
+    icon: "🐢",
+    tickMs: 36,
+    desc: "Mengetik lebih santai dan berirama",
+  },
+  fast: {
+    label: "Cepat",
+    icon: "⚡",
+    tickMs: 12,
+    desc: "Aliran cepat dengan sedikit jeda",
+  },
+  instant: {
+    label: "Instan",
+    icon: "🚀",
+    tickMs: 0,
+    desc: "Langsung tampil tanpa animasi pengetikan",
+  },
+};
+
+const typingSpeed = ref<TypingSpeedMode>(
+  (localStorage.getItem(TYPING_SPEED_KEY) as TypingSpeedMode) || "natural"
+);
+
+const onTypingSpeedChange = (speed: TypingSpeedMode) => {
+  typingSpeed.value = speed;
+  localStorage.setItem(TYPING_SPEED_KEY, speed);
+  notify.toast(`Kecepatan pengetikan: ${TYPING_CONFIGS[speed].label}`, "info");
+};
 
 const messages = ref<ChatMessage[]>([]);
 const inputText = ref("");
@@ -100,8 +143,132 @@ const fetchSessions = async (autoSelect = false) => {
   }
 };
 
+// Smooth Typewriter Stream Pacer (Pacing ritmik mirip Gemini / ChatGPT)
+let activePacerTimer: ReturnType<typeof setInterval> | null = null;
+let targetFullText = "";
+let currentPacingMsg: ChatMessage | null = null;
+let isStreamFinished = false;
+let pendingDoneStats: any = null;
+const isPacingActive = ref(false);
+
+const cleanupPacer = (flush = false) => {
+  if (activePacerTimer) {
+    clearInterval(activePacerTimer);
+    activePacerTimer = null;
+  }
+  if (flush && currentPacingMsg && targetFullText) {
+    currentPacingMsg.content = targetFullText;
+  }
+  isPacingActive.value = false;
+  isStreamFinished = false;
+  pendingDoneStats = null;
+  currentPacingMsg = null;
+  targetFullText = "";
+};
+
+const skipTypingAnimation = () => {
+  if (!currentPacingMsg) return;
+  currentPacingMsg.content = targetFullText;
+  if (activePacerTimer) {
+    clearInterval(activePacerTimer);
+    activePacerTimer = null;
+  }
+  isPacingActive.value = false;
+  void scrollToBottom();
+  if (isStreamFinished && pendingDoneStats) {
+    void finishMessageProcess(pendingDoneStats);
+  }
+};
+
+const finishMessageProcess = async (data: any) => {
+  if (!currentPacingMsg) return;
+  currentPacingMsg.isStreaming = false;
+
+  if (data?.reply && !currentPacingMsg.content) {
+    currentPacingMsg.content = data.reply;
+  }
+  if (data?.stats) {
+    currentPacingMsg.stats = data.stats;
+    if (data.stats.model) {
+      currentPacingMsg.model = data.stats.model;
+    }
+  }
+
+  if (data?.sessionId && data.sessionId !== currentSessionId.value) {
+    currentSessionId.value = data.sessionId;
+    localStorage.setItem(ACTIVE_SESSION_KEY, data.sessionId);
+  }
+
+  // Segarkan daftar sesi di background untuk memperbarui judul dan token
+  await fetchSessions(false);
+  if (currentSessionId.value) {
+    const updated = await api.getChatSession(currentSessionId.value);
+    if (updated) currentSession.value = updated;
+  }
+  isLoading.value = false;
+  cleanupPacer();
+};
+
+const startPacerIfNeeded = () => {
+  if (activePacerTimer || typingSpeed.value === "instant") return;
+  const config = TYPING_CONFIGS[typingSpeed.value] || TYPING_CONFIGS.natural;
+  isPacingActive.value = true;
+  activePacerTimer = setInterval(() => {
+    processPacerStep();
+  }, config.tickMs);
+};
+
+const processPacerStep = () => {
+  if (!currentPacingMsg) {
+    cleanupPacer();
+    return;
+  }
+
+  const currentLen = currentPacingMsg.content.length;
+  const targetLen = targetFullText.length;
+  const remaining = targetLen - currentLen;
+
+  if (remaining > 0) {
+    let step = 1;
+    if (typingSpeed.value === "instant") {
+      step = remaining;
+    } else if (typingSpeed.value === "relaxed") {
+      if (remaining > 150) step = Math.min(4, Math.ceil(remaining / 35));
+      else if (remaining > 50) step = 2;
+      else step = 1;
+    } else if (typingSpeed.value === "natural") {
+      // Ritme pengetikan halus ala ChatGPT & Gemini
+      if (remaining > 200) step = Math.min(8, Math.ceil(remaining / 25));
+      else if (remaining > 80) step = 4;
+      else if (remaining > 25) step = 2;
+      else step = 1;
+    } else if (typingSpeed.value === "fast") {
+      if (remaining > 100) step = Math.min(12, Math.ceil(remaining / 10));
+      else if (remaining > 30) step = 5;
+      else step = 2;
+    }
+
+    currentPacingMsg.content = targetFullText.slice(0, currentLen + step);
+    void scrollToBottom();
+  } else if (isStreamFinished) {
+    if (activePacerTimer) {
+      clearInterval(activePacerTimer);
+      activePacerTimer = null;
+    }
+    isPacingActive.value = false;
+    if (pendingDoneStats) {
+      void finishMessageProcess(pendingDoneStats);
+    }
+  }
+};
+
+onBeforeUnmount(() => {
+  cleanupPacer(true);
+});
+
 const loadSession = async (sessionId: string) => {
   if (!sessionId) return;
+  cleanupPacer(true);
   try {
     isLoading.value = true;
     errorMessage.value = null;
@@ -126,6 +293,7 @@ const loadSession = async (sessionId: string) => {
 };
 
 const startNewChat = () => {
+  cleanupPacer(true);
   currentSessionId.value = "";
   currentSession.value = null;
   localStorage.removeItem(ACTIVE_SESSION_KEY);
@@ -139,6 +307,7 @@ const startNewChat = () => {
 const handleDeleteSession = async (sessionId: string, e: MouseEvent) => {
   e.stopPropagation();
   if (!confirm("Hapus percakapan ini secara permanen dari server?")) return;
+  cleanupPacer(true);
 
   try {
     await api.deleteChatSession(sessionId);
@@ -229,7 +398,7 @@ const formatTimeAgo = (isoDate: string) => {
 
 const sendMessage = async () => {
   const text = inputText.value.trim();
-  if (!text || isLoading.value) return;
+  if (!text || isLoading.value || isPacingActive.value) return;
 
   errorMessage.value = null;
   const userMsg: ChatMessage = {
@@ -260,6 +429,12 @@ const sendMessage = async () => {
   messages.value.push(assistantMsg);
   await scrollToBottom();
 
+  cleanupPacer();
+  currentPacingMsg = assistantMsg;
+  targetFullText = "";
+  isStreamFinished = false;
+  pendingDoneStats = null;
+
   try {
     const historyPayload = messages.value
       .filter((m) => (m.role === "user" || m.role === "assistant") && m.id !== assistantMsgId)
@@ -276,31 +451,23 @@ const sendMessage = async () => {
       },
       {
         onChunk: (delta) => {
-          assistantMsg.content += delta;
-          void scrollToBottom();
+          targetFullText += delta;
+          if (typingSpeed.value === "instant") {
+            assistantMsg.content = targetFullText;
+            void scrollToBottom();
+          } else {
+            startPacerIfNeeded();
+          }
         },
         onDone: async (data) => {
-          assistantMsg.isStreaming = false;
-          if (data.reply && !assistantMsg.content) {
-            assistantMsg.content = data.reply;
-          }
-          if (data.stats) {
-            assistantMsg.stats = data.stats;
-            if (data.stats.model) {
-              assistantMsg.model = data.stats.model;
-            }
-          }
+          isStreamFinished = true;
+          pendingDoneStats = data;
 
-          if (data.sessionId && data.sessionId !== currentSessionId.value) {
-            currentSessionId.value = data.sessionId;
-            localStorage.setItem(ACTIVE_SESSION_KEY, data.sessionId);
-          }
-
-          // Segarkan daftar sesi di background untuk memperbarui judul dan token
-          await fetchSessions(false);
-          if (currentSessionId.value) {
-            const updated = await api.getChatSession(currentSessionId.value);
-            if (updated) currentSession.value = updated;
+          if (
+            typingSpeed.value === "instant" ||
+            assistantMsg.content.length >= targetFullText.length
+          ) {
+            await finishMessageProcess(data);
           }
         },
         onError: (err) => {
@@ -309,15 +476,19 @@ const sendMessage = async () => {
       }
     );
   } catch (err: any) {
+    cleanupPacer();
     if (!assistantMsg.content) {
       messages.value = messages.value.filter((m) => m.id !== assistantMsgId);
     } else {
       assistantMsg.isStreaming = false;
     }
+    isLoading.value = false;
     errorMessage.value = err?.message || "Terjadi kesalahan saat memproses streaming AI.";
   } finally {
-    assistantMsg.isStreaming = false;
-    isLoading.value = false;
+    if (!isPacingActive.value && !isStreamFinished) {
+      assistantMsg.isStreaming = false;
+      isLoading.value = false;
+    }
     await scrollToBottom();
   }
 };
@@ -495,6 +666,24 @@ onMounted(async () => {
               >
                 {{ model.name }} ({{ model.context }})
               </option>
+            </select>
+          </div>
+
+          <!-- Typing Speed Dropdown (Gemini / ChatGPT Style Pacing) -->
+          <div
+            class="flex items-center gap-1.5 bg-elevated/70 border border-line rounded-lg px-2.5 py-1"
+            title="Atur ritme pengetikan streaming (mirip ChatGPT & Gemini)"
+          >
+            <span class="text-xs text-muted">Jeda:</span>
+            <select
+              v-model="typingSpeed"
+              class="bg-transparent text-xs font-semibold text-ink focus:outline-hidden cursor-pointer"
+              @change="onTypingSpeedChange(typingSpeed)"
+            >
+              <option value="natural" class="bg-panel text-ink">✍️ Alami (GPT/Gemini)</option>
+              <option value="relaxed" class="bg-panel text-ink">🐢 Santai</option>
+              <option value="fast" class="bg-panel text-ink">⚡ Cepat</option>
+              <option value="instant" class="bg-panel text-ink">🚀 Instan</option>
             </select>
           </div>
 
@@ -696,14 +885,31 @@ onMounted(async () => {
                   <span class="font-mono text-[11px] text-accent">Menghubungkan ke {{ msg.model || selectedAiModel }} & streaming...</span>
                 </div>
 
-                <!-- Content with Live Typing Cursor -->
+                <!-- Content with Live Typing Cursor & Skip Action -->
                 <div v-else class="relative overflow-x-auto">
                   <MarkdownRenderer :content="msg.content" />
-                  <span
+                  <div
                     v-if="msg.isStreaming"
-                    class="inline-block w-1.5 h-4 bg-accent animate-pulse ml-1 align-middle"
-                    title="Streaming respons..."
-                  ></span>
+                    class="mt-2.5 flex items-center gap-2 pt-2 border-t border-line/40 select-none"
+                  >
+                    <span
+                      class="inline-block w-1.5 h-4 bg-accent animate-pulse align-middle shrink-0"
+                      title="Sedang mengetik..."
+                    ></span>
+                    <span class="font-mono text-[10px] text-muted flex items-center gap-1.5">
+                      <span>{{ TYPING_CONFIGS[typingSpeed]?.icon || '✍️' }}</span>
+                      <span class="hidden sm:inline">Mengetik streaming...</span>
+                    </span>
+                    <button
+                      type="button"
+                      class="ml-auto inline-flex items-center gap-1 rounded bg-accent/15 px-2 py-0.5 text-[10px] font-semibold text-accent transition hover:bg-accent/25 hover:text-ink cursor-pointer"
+                      @click="skipTypingAnimation"
+                      title="Langsung tampilkan seluruh respons tanpa menunggu animasi pengetikan"
+                    >
+                      <span>⚡</span>
+                      <span>Tampilkan Langsung</span>
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>

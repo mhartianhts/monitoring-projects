@@ -9,8 +9,10 @@ import MobileShareView from "../views/MobileShareView.vue";
 import EnvManagerView from "../views/EnvManagerView.vue";
 import TelegramView from "../views/TelegramView.vue";
 import WebhookInboxView from "../views/WebhookInboxView.vue";
+import WebhookConfigView from "../views/WebhookConfigView.vue";
 import TerminalView from "../views/TerminalView.vue";
 import ChatbotView from "../views/ChatbotView.vue";
+import ClaudeChatView from "../views/ClaudeChatView.vue";
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -61,9 +63,21 @@ export const router = createRouter({
           meta: { requiresProjectSidebar: true },
         },
         {
+          path: "webhook-config",
+          name: "webhook-config",
+          component: WebhookConfigView,
+          meta: { requiresProjectSidebar: true },
+        },
+        {
           path: "chat",
           name: "chat",
           component: ChatbotView,
+          meta: { requiresProjectSidebar: true },
+        },
+        {
+          path: "claude-chat",
+          name: "claude-chat",
+          component: ClaudeChatView,
           meta: { requiresProjectSidebar: true },
         },
         {

@@ -23,6 +23,54 @@ export interface IWebhookVcard {
   raw: string | null;
 }
 
+export interface IWebhookInteractiveButton {
+  type: "reply" | "url" | "copy" | "call" | "list";
+  id?: string;
+  displayText: string;
+  url?: string;
+  copyCode?: string;
+  phoneNumber?: string;
+  sections?: Array<{
+    title?: string;
+    rows: Array<{
+      id?: string;
+      title?: string;
+      description?: string;
+      header?: string;
+    }>;
+  }>;
+}
+
+export interface IWebhookInteractivePayload {
+  type: "interactive";
+  title?: string;
+  body: string;
+  footer?: string;
+  buttons: IWebhookInteractiveButton[];
+}
+
+export interface IWebhookBotReply {
+  type?: "text" | "interactive" | "media" | "poll" | "reaction" | "location" | "contact";
+  text: string | null;
+  payload?: any;
+  model: string;
+  repliedAt?: string;
+  failedAt?: string;
+  error?: string | null;
+}
+
+export interface IWebhookConfig {
+  autoReplyEnabled: boolean;
+  model: string;
+  systemPrompt: string;
+  replyTimeoutMs?: number;
+  senderMode?: "all" | "whitelist";
+  allowedSenders?: string[];
+  skipKeywords?: string[];
+  groupMode?: "off" | "all" | "whitelist";
+  allowedGroups?: string[];
+}
+
 export interface IWebhookInboxItem {
   id: string;
   kind: WebhookKind;
@@ -42,6 +90,7 @@ export interface IWebhookInboxItem {
   media: IWebhookMedia | null;
   hasLocalMedia: boolean;
   mediaUrl: string | null;
+  botReply?: IWebhookBotReply | null;
   raw?: Record<string, unknown>;
 }
 
@@ -56,13 +105,39 @@ export interface IWebhookInboxList {
     text: number;
     media: number;
     contact: number;
+    direct?: number;
+    group?: number;
   };
+}
+
+export interface IWebhookThread {
+  threadId?: string;
+  isGroup?: boolean;
+  groupId?: string | null;
+  groupName?: string | null;
+  senderNumber: string;
+  displayName: string | null;
+  whatsappNumber: string | null;
+  deviceId: string | null;
+  messageCount: number;
+  lastReceivedAt: string;
+  lastItem: IWebhookInboxItem;
+  kinds: WebhookKind[];
+  messages: IWebhookInboxItem[];
+}
+
+export interface IWebhookThreadList {
+  threads: IWebhookThread[];
+  totalThreads: number;
+  totalMessages: number;
 }
 
 export interface IWebhookInfo {
   path: string;
   method: string;
   skipReply: boolean;
+  autoReplyEnabled?: boolean;
+  model?: string;
   secretConfigured: boolean;
   localUrl: string;
   lanUrls: string[];

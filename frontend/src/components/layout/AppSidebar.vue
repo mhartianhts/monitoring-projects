@@ -311,6 +311,20 @@ const toggleCollapse = () => {
       </RouterLink>
 
       <RouterLink
+        :to="{ name: 'claude-chat' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
+        :class="
+          route.name === 'claude-chat'
+            ? 'bg-amber-500/15 text-amber-300 border border-amber-500/40 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'Claude Code Assistant (Local CLI)' : undefined"
+      >
+        <span class="text-base shrink-0">⚡</span>
+        <span v-if="!isCollapsed" class="truncate">Claude Code</span>
+      </RouterLink>
+
+      <RouterLink
         :to="{ name: 'webhook' }"
         class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
         :class="
@@ -322,6 +336,20 @@ const toggleCollapse = () => {
       >
         <span class="text-base shrink-0">💬</span>
         <span v-if="!isCollapsed" class="truncate">Chatbot Inbox</span>
+      </RouterLink>
+
+      <RouterLink
+        :to="{ name: 'webhook-config' }"
+        class="flex items-center gap-3 rounded-lg px-3 py-2 text-xs font-semibold transition"
+        :class="
+          route.name === 'webhook-config'
+            ? 'bg-accent/15 text-accent border border-accent/30 shadow-xs'
+            : 'text-muted hover:bg-elevated hover:text-ink'
+        "
+        :title="isCollapsed ? 'Pengaturan Webhook & AI' : undefined"
+      >
+        <span class="text-base shrink-0">⚙️</span>
+        <span v-if="!isCollapsed" class="truncate">Config Webhook</span>
       </RouterLink>
 
       <RouterLink

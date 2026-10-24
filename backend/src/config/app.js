@@ -25,4 +25,6 @@ export const appConfig = {
   webhookMaxMediaBytes: Number(
     process.env.WEBHOOK_MAX_MEDIA_BYTES || 50 * 1024 * 1024,
   ),
+  claudeCliPath: process.env.CLAUDE_CLI_PATH || "",
+  claudeTimeoutMs: Number(process.env.CLAUDE_TIMEOUT_MS || 180000),
 };

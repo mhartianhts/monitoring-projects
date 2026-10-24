@@ -8,14 +8,22 @@ import {
   sanitizeFilename,
   isSafeMediaUrl,
   parseVcard,
+  normalizeGroupId,
+  isGroupAllowed,
   createWebhookInboxStore,
 } from "../src/services/webhookInbox.service.js";
 
-const makeTempStore = (fetchFn) => {
+const makeTempStore = (
+  fetchFn,
+  aiChatFn,
+  config = { autoReplyEnabled: false },
+) => {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "webhook-inbox-"));
   const store = createWebhookInboxStore({
     dataDir,
     fetchFn,
+    aiChatFn,
+    config,
     maxInbox: 5,
   });
   return { store, dataDir };
@@ -250,3 +258,325 @@ test("list, delete, dan clearAll bekerja", async () => {
 
   fs.rmSync(dataDir, { recursive: true, force: true });
 });
+
+test("getConfig dan updateConfig mengelola konfigurasi auto-reply", () => {
+  const { store, dataDir } = makeTempStore();
+  const cfg = store.getConfig();
+  assert.equal(typeof cfg.autoReplyEnabled, "boolean");
+  assert.equal(cfg.model, "deepseek-v4-flash");
+
+  const updated = store.updateConfig({
+    autoReplyEnabled: true,
+    model: "kimi-k27-code",
+    systemPrompt: "Prompt kustom",
+  });
+  assert.equal(updated.autoReplyEnabled, true);
+  assert.equal(updated.model, "kimi-k27-code");
+  assert.equal(updated.systemPrompt, "Prompt kustom");
+
+  const readBack = store.getConfig();
+  assert.equal(readBack.autoReplyEnabled, true);
+  assert.equal(readBack.model, "kimi-k27-code");
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("ingest memanggil AI auto-reply jika autoReplyEnabled aktif", async () => {
+  let calledPrompt = "";
+  let calledModel = "";
+  const mockAi = async ({ message, model }) => {
+    calledPrompt = message;
+    calledModel = model;
+    return { reply: `Jawaban AI untuk: ${message}` };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+    model: "deepseek-v4-flash",
+    systemPrompt: "Asisten WhatsApp",
+  });
+
+  const saved = await store.ingest({
+    sender_number: "62899999",
+    message: "Berapa harga produk A?",
+  });
+
+  assert.equal(calledPrompt, "Berapa harga produk A?");
+  assert.equal(calledModel, "deepseek-v4-flash");
+  assert.ok(saved.botReply);
+  assert.equal(saved.botReply.text, "Jawaban AI untuk: Berapa harga produk A?");
+  assert.equal(saved.botReply.model, "deepseek-v4-flash");
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("listThreads, getThread, dan deleteThread menyusun pesan per nomor", async () => {
+  const { store, dataDir } = makeTempStore();
+  await store.ingest({ sender_number: "62811", message: "pesan 1 dari 62811" });
+  await store.ingest({ sender_number: "62822", message: "pesan 1 dari 62822" });
+  await store.ingest({ sender_number: "62811", message: "pesan 2 dari 62811" });
+
+  const result = store.listThreads();
+  assert.equal(result.totalThreads, 2);
+  assert.equal(result.totalMessages, 3);
+
+  const thread62811 = result.threads.find((t) => t.senderNumber === "62811");
+  assert.ok(thread62811);
+  assert.equal(thread62811.messageCount, 2);
+  assert.equal(thread62811.messages.length, 2);
+  // Pesan terurut kronologis (pesan 1 lalu pesan 2)
+  assert.equal(thread62811.messages[0].message, "pesan 1 dari 62811");
+  assert.equal(thread62811.messages[1].message, "pesan 2 dari 62811");
+
+  const singleThread = store.getThread("62811");
+  assert.ok(singleThread);
+  assert.equal(singleThread.messageCount, 2);
+  assert.equal(singleThread.messages.length, 2);
+
+  const deleted = store.deleteThread("62811");
+  assert.equal(deleted.deleted, 2);
+  assert.equal(store.listThreads().totalThreads, 1);
+  assert.equal(store.listThreads().totalMessages, 1);
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("ingest merespon /start dengan pesan interaktif TANPA memanggil AI", async () => {
+  let aiCalled = false;
+  const mockAi = async () => {
+    aiCalled = true;
+    return { reply: "Harusnya tidak terpanggil" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+  });
+
+  const saved = await store.ingest({
+    sender_number: "628123456789",
+    message: "/start",
+  });
+
+  assert.equal(aiCalled, false, "AI tidak boleh dipanggil saat /start");
+  assert.ok(saved.botReply);
+  assert.equal(saved.botReply.type, "interactive");
+  assert.equal(saved.botReply.model, "system-command");
+  assert.equal(saved.botReply.payload.type, "interactive");
+  assert.equal(saved.botReply.payload.title, "⚡ Menu Asisten Monitoring");
+  assert.equal(saved.botReply.payload.buttons.length, 3);
+  assert.equal(saved.botReply.payload.buttons[0].id, "info");
+  assert.equal(saved.botReply.payload.buttons[1].id, "status");
+  assert.equal(saved.botReply.payload.buttons[2].id, "clear");
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("ingest merespon /info, /status, dan /clear TANPA memanggil AI", async () => {
+  let aiCalled = false;
+  const mockAi = async () => {
+    aiCalled = true;
+    return { reply: "Harusnya tidak terpanggil" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+  });
+
+  // Test /info
+  const infoRes = await store.ingest({
+    sender_number: "628123456789",
+    message: "/info",
+  });
+  assert.equal(aiCalled, false);
+  assert.ok(infoRes.botReply.text.includes("INFORMASI SISTEM"));
+
+  // Test /status
+  const statusRes = await store.ingest({
+    sender_number: "628123456789",
+    message: "/status",
+  });
+  assert.equal(aiCalled, false);
+  assert.ok(statusRes.botReply.text.includes("STATUS SISTEM"));
+
+  // Test /clear
+  const clearRes = await store.ingest({
+    sender_number: "628123456789",
+    message: "/clear",
+  });
+  assert.equal(aiCalled, false);
+  assert.ok(clearRes.botReply.text.includes("RIWAYAT OBROLAN DIRESET"));
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("filter pengirim whitelist dan normalisasi nomor bekerja sesuai panduan", async () => {
+  let aiCalledCount = 0;
+  const mockAi = async () => {
+    aiCalledCount++;
+    return { reply: "Halo dari AI" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+    senderMode: "whitelist",
+    allowedSenders: ["081234567890"], // Format 08
+  });
+
+  // Nomor sama dengan format +62 -> harus diizinkan
+  const allowedRes = await store.ingest({
+    sender_number: "+6281234567890",
+    message: "Halo bot",
+  });
+  assert.equal(aiCalledCount, 1);
+  assert.ok(allowedRes.botReply);
+
+  // Nomor di luar whitelist -> tidak boleh dibalas
+  const blockedRes = await store.ingest({
+    sender_number: "628999999999",
+    message: "Halo juga",
+  });
+  assert.equal(aiCalledCount, 1);
+  assert.equal(blockedRes.botReply, null);
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("groupMode off tidak pernah membalas pesan grup (default)", async () => {
+  let aiCalled = false;
+  const mockAi = async () => {
+    aiCalled = true;
+    return { reply: "Balasan grup" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+    groupMode: "off",
+  });
+
+  const res = await store.ingest({
+    sender_number: "62811111111",
+    message: "Halo grup",
+    chat_type: "group",
+    group_id: "120363382571640255@g.us",
+    group_name: "Tim Developer",
+  });
+
+  assert.equal(aiCalled, false);
+  assert.equal(res.botReply, null);
+  assert.equal(res.chatType, "group");
+  assert.equal(res.groupId, "120363382571640255@g.us");
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("groupMode all membalas pesan grup dan mengabaikan sender whitelist", async () => {
+  let aiCalled = false;
+  const mockAi = async () => {
+    aiCalled = true;
+    return { reply: "Halo rekan-rekan grup!" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+    senderMode: "whitelist",
+    allowedSenders: ["62899999999"], // Nomor anggota 62811111111 TIDAK ada di whitelist
+    groupMode: "all",
+  });
+
+  const res = await store.ingest({
+    sender_number: "62811111111",
+    message: "Tanya jadwal rapat",
+    chat_type: "group",
+    group_id: "120363382571640255@g.us",
+    group_name: "Grup Project",
+  });
+
+  assert.equal(aiCalled, true, "Pesan grup harus dibalas walau nomor tidak di whitelist pengirim");
+  assert.ok(res.botReply);
+  assert.equal(res.botReply.text, "Halo rekan-rekan grup!");
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("groupMode whitelist dan normalisasi @g.us bekerja sesuai panduan", async () => {
+  let aiCalledCount = 0;
+  const mockAi = async () => {
+    aiCalledCount++;
+    return { reply: "Jawaban grup" };
+  };
+
+  const { store, dataDir } = makeTempStore(null, mockAi, {
+    autoReplyEnabled: true,
+    groupMode: "whitelist",
+    allowedGroups: ["120363382571640255"], // Tanpa sufiks @g.us
+  });
+
+  // 1. Grup yang terdaftar di whitelist (dengan sufiks @g.us) -> harus dibalas
+  const allowedRes = await store.ingest({
+    sender_number: "62811111111",
+    message: "Halo grup whitelist",
+    chat_type: "group",
+    group_id: "120363382571640255@g.us",
+    group_name: "Grup Resmi",
+  });
+  assert.equal(aiCalledCount, 1);
+  assert.ok(allowedRes.botReply);
+
+  // 2. Grup lain yang tidak ada di whitelist -> tidak dibalas
+  const blockedRes = await store.ingest({
+    sender_number: "62811111111",
+    message: "Halo grup lain",
+    chat_type: "group",
+    group_id: "999999999999999999@g.us",
+    group_name: "Grup Luar",
+  });
+  assert.equal(aiCalledCount, 1);
+  assert.equal(blockedRes.botReply, null);
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+test("listThreads dan getThread mengelompokkan pesan grup tersendiri", async () => {
+  const { store, dataDir } = makeTempStore();
+
+  // Pesan direct
+  await store.ingest({ sender_number: "62811", message: "pesan japri 1", chat_type: "direct" });
+  // Pesan grup A
+  await store.ingest({
+    sender_number: "62811",
+    message: "pesan di grup A dari 62811",
+    chat_type: "group",
+    group_id: "groupA@g.us",
+    group_name: "Komunitas A",
+  });
+  // Pesan grup A dari orang lain
+  await store.ingest({
+    sender_number: "62822",
+    message: "pesan di grup A dari 62822",
+    chat_type: "group",
+    group_id: "groupA@g.us",
+    group_name: "Komunitas A",
+  });
+
+  const res = store.listThreads();
+  // Ada 2 thread: 1 direct (62811) dan 1 grup (group:groupA@g.us)
+  assert.equal(res.totalThreads, 2);
+
+  const groupThread = res.threads.find((t) => t.isGroup);
+  assert.ok(groupThread);
+  assert.equal(groupThread.groupName, "Komunitas A");
+  assert.equal(groupThread.messageCount, 2);
+
+  const directThread = res.threads.find((t) => !t.isGroup);
+  assert.ok(directThread);
+  assert.equal(directThread.messageCount, 1);
+
+  const detailGroup = store.getThread("group:groupA@g.us");
+  assert.ok(detailGroup);
+  assert.equal(detailGroup.isGroup, true);
+  assert.equal(detailGroup.messages.length, 2);
+
+  fs.rmSync(dataDir, { recursive: true, force: true });
+});
+
+
