@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import fs from "node:fs";
 import path from "node:path";
 import process from "node:process";
@@ -22,14 +22,103 @@ const ensureWorkspace = () => {
 export const DEFAULT_GENERAL_SYSTEM_PROMPT =
   "Anda adalah Claude, asisten AI umum yang cerdas, ramah, dan serbaguna. Anda dapat menjawab dan berdiskusi secara luas tentang apa saja seperti chatbot pada umumnya — percakapan sehari-hari, brainstorming ide, penulisan artikel & pesan, penjelasan konsep umum & sains, analisis logika & matematika, hingga rekayasa perangkat lunak dan pemrograman. Jawablah secara terstruktur, ramah, padat, dan jelas dalam format Markdown yang rapi. Jangan mengomentari status repositori git, branch, atau uncommitted changes lokal kecuali jika diminta secara spesifik oleh pengguna.";
 
-export const resolveClaudeExecutable = () => {
-  if (appConfig.claudeCliPath && fs.existsSync(appConfig.claudeCliPath)) {
-    return appConfig.claudeCliPath;
+// Cache runner agar tidak perlu spawn wsl check berulang-ulang setiap request
+let cachedRunner = null;
+let lastRunnerCheck = 0;
+const RUNNER_CACHE_TTL = 30000; // 30 detik
+
+export const resolveClaudeRunner = () => {
+  const now = Date.now();
+  if (cachedRunner && now - lastRunnerCheck < RUNNER_CACHE_TTL) {
+    return cachedRunner;
+  }
+
+  // 1. Cek konfigurasi eksplisit dari .env
+  if (appConfig.claudeCliPath) {
+    if (appConfig.claudeCliPath.startsWith("wsl:")) {
+      const wslBin =
+        appConfig.claudeCliPath.slice(4).trim() ||
+        "/home/gass/.local/bin/claude";
+      cachedRunner = {
+        type: "wsl",
+        command: "wsl.exe",
+        argsPrefix: ["-e", wslBin],
+        displayBinary: `WSL: ${wslBin}`,
+      };
+      lastRunnerCheck = now;
+      return cachedRunner;
+    }
+    if (fs.existsSync(appConfig.claudeCliPath)) {
+      cachedRunner = {
+        type: "windows",
+        command:
+          process.platform === "win32" ? "cmd.exe" : appConfig.claudeCliPath,
+        argsPrefix:
+          process.platform === "win32" ? ["/c", appConfig.claudeCliPath] : [],
+        displayBinary: appConfig.claudeCliPath,
+      };
+      lastRunnerCheck = now;
+      return cachedRunner;
+    }
   }
 
   const isWindows = process.platform === "win32";
+
+  // 2. Jika di Windows, cek apakah ada Claude di WSL terlebih dahulu
   if (isWindows) {
-    const candidates = [
+    const wslCandidates = [
+      "/home/gass/.local/bin/claude",
+      "/usr/local/bin/claude",
+      "/usr/bin/claude",
+    ];
+
+    for (const wPath of wslCandidates) {
+      try {
+        const check = spawnSync("wsl.exe", ["test", "-x", wPath], {
+          windowsHide: true,
+          stdio: "ignore",
+          timeout: 2000,
+        });
+        if (check.status === 0) {
+          cachedRunner = {
+            type: "wsl",
+            command: "wsl.exe",
+            argsPrefix: ["-e", wPath],
+            displayBinary: `WSL (${wPath})`,
+          };
+          lastRunnerCheck = now;
+          return cachedRunner;
+        }
+      } catch {}
+    }
+
+    // Dynamic fallback via wsl bash which claude
+    try {
+      const checkWhich = spawnSync("wsl.exe", ["bash", "-lc", "which claude"], {
+        windowsHide: true,
+        encoding: "utf8",
+        timeout: 3000,
+      });
+      const resolvedPath = checkWhich.stdout?.trim();
+      if (checkWhich.status === 0 && resolvedPath) {
+        cachedRunner = {
+          type: "wsl",
+          command: "wsl.exe",
+          argsPrefix: ["-e", resolvedPath],
+          displayBinary: `WSL (${resolvedPath})`,
+        };
+        lastRunnerCheck = now;
+        return cachedRunner;
+      }
+    } catch {}
+
+    // 3. Fallback kandidat Windows lokal & global
+    const winCandidates = [
+      path.resolve(__dirname, "../../claude.cmd"),
+      path.resolve(
+        __dirname,
+        "../../node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+      ),
       path.join(process.env.APPDATA || "", "npm", "claude.cmd"),
       path.join(process.env.LOCALAPPDATA || "", "npm", "claude.cmd"),
       path.join(
@@ -39,23 +128,69 @@ export const resolveClaudeExecutable = () => {
       ),
     ];
 
-    for (const c of candidates) {
-      if (c && fs.existsSync(c)) return c;
+    for (const c of winCandidates) {
+      if (c && fs.existsSync(c)) {
+        cachedRunner = {
+          type: "windows",
+          command: "cmd.exe",
+          argsPrefix: ["/c", c],
+          displayBinary: c,
+        };
+        lastRunnerCheck = now;
+        return cachedRunner;
+      }
     }
-    return "claude.cmd";
+
+    cachedRunner = {
+      type: "windows",
+      command: "cmd.exe",
+      argsPrefix: ["/c", "claude.cmd"],
+      displayBinary: "claude.cmd",
+    };
+    lastRunnerCheck = now;
+    return cachedRunner;
   }
 
-  return "claude";
+  // Linux / macOS native candidates
+  const nixCandidates = [
+    path.resolve(__dirname, "../../claude"),
+    path.resolve(__dirname, "../../node_modules/.bin/claude"),
+  ];
+  for (const c of nixCandidates) {
+    if (c && fs.existsSync(c)) {
+      cachedRunner = {
+        type: "native",
+        command: c,
+        argsPrefix: [],
+        displayBinary: c,
+      };
+      lastRunnerCheck = now;
+      return cachedRunner;
+    }
+  }
+
+  cachedRunner = {
+    type: "native",
+    command: "claude",
+    argsPrefix: [],
+    displayBinary: "claude",
+  };
+  lastRunnerCheck = now;
+  return cachedRunner;
+};
+
+export const resolveClaudeExecutable = () => {
+  const runner = resolveClaudeRunner();
+  return runner.displayBinary;
 };
 
 export const getClaudeStatus = async () => {
-  const binary = resolveClaudeExecutable();
+  const runner = resolveClaudeRunner();
 
   return new Promise((resolve) => {
     let resolved = false;
-    const isWindows = process.platform === "win32";
-    const command = isWindows ? "cmd.exe" : binary;
-    const args = isWindows ? ["/c", binary, "--version"] : ["--version"];
+    const command = runner.command;
+    const args = [...runner.argsPrefix, "--version"];
 
     const child = spawn(command, args, {
       stdio: ["ignore", "pipe", "pipe"],
@@ -74,7 +209,7 @@ export const getClaudeStatus = async () => {
       resolve({
         available: false,
         version: null,
-        binary,
+        binary: runner.displayBinary,
         error: "Timeout memeriksa Claude CLI",
       });
     }, 6000);
@@ -97,7 +232,7 @@ export const getClaudeStatus = async () => {
       resolve({
         available: isAvailable,
         version: isAvailable ? verMatch.replace(/\r?\n.*/s, "").trim() : null,
-        binary,
+        binary: runner.displayBinary,
         models: [
           {
             id: "default",
@@ -121,8 +256,8 @@ export const getClaudeStatus = async () => {
           },
         ],
         hint: isAvailable
-          ? "Claude Code CLI terhubung langsung ke laptop Anda."
-          : "Claude Code CLI belum terdeteksi. Pastikan terpasang: npm i -g @anthropic-ai/claude-code",
+          ? `Claude Code CLI aktif terhubung via ${runner.displayBinary}.`
+          : "Claude Code CLI belum terdeteksi di WSL maupun Windows. Pastikan terpasang.",
       });
     });
 
@@ -133,9 +268,9 @@ export const getClaudeStatus = async () => {
       resolve({
         available: false,
         version: null,
-        binary,
+        binary: runner.displayBinary,
         error: err.message,
-        hint: "Gagal menjalankan Claude CLI. Pastikan Node.js & Claude CLI terinstal.",
+        hint: "Gagal menjalankan Claude CLI.",
       });
     });
   });
@@ -219,8 +354,9 @@ export const streamChatWithClaudeCli = ({
     cliArgs.push("--tools", "");
   }
 
-  const spawnCommand = isWindows ? "cmd.exe" : binary;
-  const spawnArgs = isWindows ? ["/c", binary, ...cliArgs] : cliArgs;
+  const runner = resolveClaudeRunner();
+  const spawnCommand = runner.command;
+  const spawnArgs = [...runner.argsPrefix, ...cliArgs];
 
   let settled = false;
   let stdoutBuffer = "";

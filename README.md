@@ -9,14 +9,23 @@ Dashboard lokal untuk Start / Stop / Restart project di `D:\mhartian\project`, d
 
 ## Quick start
 
+### 1. Mode Web Browser
 ```bash
 # dari root repo
 npm run install:all
 npm run dev
 ```
-
 - Frontend: http://localhost:7070
 - Backend API: http://localhost:7171/api/health
+
+### 2. Mode Desktop GUI (Standalone & System Tray)
+```bash
+# Menjalankan backend, frontend, dan jendela Desktop GUI dengan System Tray
+npm run dev:desktop
+
+# Atau buka Desktop GUI mandiri (jika backend/frontend sudah berjalan):
+npm run desktop
+```
 
 ## Konfigurasi project
 

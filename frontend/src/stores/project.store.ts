@@ -203,6 +203,7 @@ export const useProjectStore = defineStore("project", () => {
       const fresh = await api.getProject(id);
       upsert(fresh);
       logs.value = await api.getLogs(id);
+      void fetchGitStatus(id);
     } catch (err) {
       error.value =
         err instanceof Error ? err.message : "Failed to select project";
